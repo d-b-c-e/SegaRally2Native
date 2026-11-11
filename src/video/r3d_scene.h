@@ -200,7 +200,9 @@ private:
     std::unordered_map<uint32_t, std::vector<const PrevInstance*>> copies_before_;
     std::unordered_map<uint32_t, uint32_t> rekey_;
     std::unordered_map<uint32_t, std::array<float, 9>> prev_axes_, axes_;   // model instance -> its axes last frame, this frame
-    std::unordered_set<uint32_t> spinning_;   // instances that turned a lot since the previous frame
+    // Instances that turned a lot since the previous frame, and how far their origin travelled meanwhile
+    std::unordered_map<uint32_t, std::array<float, 3>> spinning_;
+    std::unordered_map<uint32_t, std::array<float, 3>> prev_origins_, origins_;   // model instance -> its origin last frame, this frame
     std::unordered_map<uint32_t, uint32_t> instance_count_;
     uint32_t node_key_ = 0, viewport_key_ = 0;
     bool hide_blob_shadows_ = false;

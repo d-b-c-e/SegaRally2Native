@@ -704,20 +704,39 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
     pair_copies();
     auto& axes = axes_;
     auto& spinning = spinning_;
+    auto& origins = origins_;
     axes.clear();
     spinning.clear();
+    origins.clear();
     for (const auto& list : viewport_instances_)
         for (const R3DInstance& in : list) {
             std::array<float, 9>& a = axes[in.key];
             memcpy(a.data(), in.axes, sizeof(in.axes));
+            origins[in.key] = {in.origin[0], in.origin[1], in.origin[2]};
             auto it = prev_axes_.find(in.key);
             if (it == prev_axes_.end()) continue;
             // Rotation angle between both frames: trace(prev^T now) = 1 + 2 cos(angle)
             float trace = 0;
             for (int i = 0; i < 9; i++) trace += a[i] * it->second[i];
-            if (trace < 1.0f + 2.0f * 0.866f) spinning.insert(in.key);   // more than 30 degrees
+            if (trace >= 1.0f + 2.0f * 0.866f) continue;   // (up to 30 degrees: its corners are followed one by one)
+            // A wheel: between two frames its corners would cut across the
+            // circle they turn on (the wheel shrinking and swelling), so it
+            // keeps this frame's shape; but it travels with its car, by as
+            // much as its origin (its hub) did. Left where this frame has it,
+            // it ran ahead of the bodywork drawn between both frames: seen
+            // through the wings and the bumper of a car coming fast at a
+            // long lens (Sega Rally 2's attract), a metre a frame
+            std::array<float, 3> move = {0, 0, 0};
+            auto was = prev_origins_.find(in.key);
+            if (was != prev_origins_.end()) {
+                float d[3] = {in.origin[0] - was->second[0], in.origin[1] - was->second[1], in.origin[2] - was->second[2]};
+                float limit = 0.25f * std::max(1.0f, std::fabs(in.origin[2]));
+                if (d[0] * d[0] + d[1] * d[1] + d[2] * d[2] <= limit * limit) move = {d[0], d[1], d[2]};
+            }
+            spinning[in.key] = move;
         }
     prev_axes_.swap(axes);
+    prev_origins_.swap(origins);
     // One entry per polygon (its key without the corner, the low 3 bits:
     // its first vertex), its corners following it; a vertex's partner is
     // checked by its whole key (a per-vertex map took most of the frame
@@ -727,6 +746,7 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
     index_.reset(out.vertices.size() / 3 + 16);
     uint32_t last_hi = 0;
     bool last_spin = false, have_hi = false;
+    const float* spin_move = nullptr;
     for (size_t i = 0; i < out.vertices.size(); i++) {
         R3DVertex& v = out.vertices[i];
         memcpy(v.prev, v.pos, sizeof(v.pos));
@@ -734,8 +754,18 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
         uint32_t corner = uint32_t(key & 7);
         if (corner == 0) index_.insert(poly, uint32_t(i));
         uint32_t hi = uint32_t(key >> 32);
-        if (!have_hi || hi != last_hi) last_hi = hi, last_spin = spinning.count(hi) != 0, have_hi = true;
-        if (last_spin) continue;
+        if (!have_hi || hi != last_hi) {
+            auto spin = spinning.find(hi);
+            last_hi = hi, last_spin = spin != spinning.end(), have_hi = true;
+            spin_move = last_spin ? spin->second.data() : nullptr;
+        }
+        if (last_spin) {
+            if (spin_move[0] != 0 || spin_move[1] != 0 || spin_move[2] != 0) {
+                for (int k = 0; k < 3; k++) v.prev[k] = v.pos[k] - spin_move[k];
+                out.moving++;
+            }
+            continue;
+        }
         uint32_t was = prev_index_.find(poly);
         if (was == KeyIndex::EMPTY) continue;
         size_t j = size_t(was) + corner;
@@ -1057,7 +1087,7 @@ void R3DSceneBuilder::model(uint32_t addr, const Mat& m, const Attribs& a) {
     uint64_t instance = uint64_t(instance_key(addr)) << 32;
     uint32_t drawn = 0;
     const uint32_t start_addr = addr;
-    uint32_t opaque_from = uint32_t(opaque_.size()), trans_from = uint32_t(trans_.size());
+    uint32_t opaque_from = uint32_t(opaque_.size()), trans_from = uint32_t(trans_.size()), back_from = uint32_t(backs_.size());
 
     for (int guard = 0; guard < 65536; guard++) {
         uint32_t h[7];
@@ -1223,6 +1253,7 @@ void R3DSceneBuilder::model(uint32_t addr, const Mat& m, const Attribs& a) {
         }
         in.path = path;
         in.start = start_addr;
+        in.back[0] = back_from, in.back[1] = uint32_t(backs_.size());
         instances_.push_back(in);
     }
 }
