@@ -1057,7 +1057,7 @@ void R3DSceneBuilder::model(uint32_t addr, const Mat& m, const Attribs& a) {
     uint64_t instance = uint64_t(instance_key(addr)) << 32;
     uint32_t drawn = 0;
     const uint32_t start_addr = addr;
-    uint32_t opaque_from = uint32_t(opaque_.size()), trans_from = uint32_t(trans_.size());
+    uint32_t opaque_from = uint32_t(opaque_.size()), trans_from = uint32_t(trans_.size()), back_from = uint32_t(backs_.size());
 
     for (int guard = 0; guard < 65536; guard++) {
         uint32_t h[7];
@@ -1223,6 +1223,7 @@ void R3DSceneBuilder::model(uint32_t addr, const Mat& m, const Attribs& a) {
         }
         in.path = path;
         in.start = start_addr;
+        in.back[0] = back_from, in.back[1] = uint32_t(backs_.size());
         instances_.push_back(in);
     }
 }

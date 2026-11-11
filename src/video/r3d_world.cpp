@@ -107,37 +107,228 @@ static void settle_scenery(const std::vector<R3DInstance>& list, const float* ax
     }
 }
 
+// The highest surface of the scenery under each of some points (not what is
+// above them: a roof, a branch): the points in cells of 2 m across
+struct GroundQuery {
+    float u, h, w;           // across, height, across
+    float ground = -1e30f;   // (stays so where there is none)
+};
+static void ground_under(const std::vector<R3DInstance>& list, const float* axes, const R3DScene& out, const R3DViewport& v,
+                         std::vector<GroundQuery>& queries) {
+    const float *ax = axes, *up = axes + 3, *az = axes + 6;
+    auto dot = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+    const float cell = 2.0f;
+    auto cell_of = [&](float u, float w) {
+        return (uint64_t(uint32_t(int32_t(std::floor(u / cell)))) << 32) | uint32_t(int32_t(std::floor(w / cell)));
+    };
+    std::vector<std::pair<uint64_t, int>> cells;
+    for (size_t m = 0; m < queries.size(); m++) cells.push_back({cell_of(queries[m].u, queries[m].w), int(m)});
+    std::sort(cells.begin(), cells.end());
+    for (const R3DInstance& in : list) {
+        if (!same_axes(in.axes, axes)) continue;
+        for (uint32_t i = in.opaque[0]; i + 2 < in.opaque[1]; i += 3) {
+            const R3DVertex* t = &out.vertices[v.opaque_first + i];
+            float u[3], h[3], w[3];
+            for (int k = 0; k < 3; k++) u[k] = dot(t[k].pos, ax), h[k] = dot(t[k].pos, up), w[k] = dot(t[k].pos, az);
+            float u0 = std::min({u[0], u[1], u[2]}), u1 = std::max({u[0], u[1], u[2]});
+            float w0 = std::min({w[0], w[1], w[2]}), w1 = std::max({w[0], w[1], w[2]});
+            if (u1 - u0 > 60.0f || w1 - w0 > 60.0f) continue;   // (huge ones: none is ground near a model)
+            for (float cu = std::floor(u0 / cell) * cell; cu <= u1; cu += cell)
+                for (float cw = std::floor(w0 / cell) * cell; cw <= w1; cw += cell) {
+                    uint64_t key = cell_of(cu + 0.5f * cell, cw + 0.5f * cell);
+                    auto it = std::lower_bound(cells.begin(), cells.end(), std::make_pair(key, -1));
+                    for (; it != cells.end() && it->first == key; ++it) {
+                        GroundQuery& m = queries[it->second];
+                        // Inside the triangle across (barycentric weights)
+                        float d = (w[1] - w[2]) * (u[0] - u[2]) + (u[2] - u[1]) * (w[0] - w[2]);
+                        if (std::fabs(d) < 1e-6f) continue;
+                        float a = ((w[1] - w[2]) * (m.u - u[2]) + (u[2] - u[1]) * (m.w - w[2])) / d;
+                        float b = ((w[2] - w[0]) * (m.u - u[2]) + (u[0] - u[2]) * (m.w - w[2])) / d;
+                        if (a < 0 || b < 0 || a + b > 1) continue;
+                        float g = a * h[0] + b * h[1] + (1 - a - b) * h[2];
+                        if (g <= m.h + 0.3f) m.ground = std::max(m.ground, g);   // (not a roof above it)
+                    }
+                }
+        }
+    }
+}
+
+// Sega Rally 2: the cars of the attract's demos (and of the replays) are
+// all models of the world, not in viewports of their own as the player's and
+// the rivals near it are in a race, and the game keeps them above the road it
+// draws just the same: on its own ground, 25 cm over the road in the desert,
+// 15 in the mountain. They are set down as R3DSceneBuilder::settle_player_car
+// does those: by the height of the dark patch the game lays under each car
+// (at its tyres when it stands, left on the ground when it jumps) over the
+// road drawn below it, the middle one of the patch's corners, followed
+// smoothly from frame to frame and kept while it cannot be measured. All of
+// the car goes down by it, whatever its own height: every model drawn over
+// the patch (bodywork, wheels, the glass and the painted shine, see-through
+// models of their own, the polygons facing away that still cast shadows), and
+// the patch stops just clear of the road. Measured at the car's lowest point
+// instead, a jump read as floating and was pressed flat, then let go at once;
+// and the long lenses film from 40 m and more, where only some pieces were
+// looked at: the bodywork came down without its wheels (matt: not taken for
+// a car's), which showed through the wings, or without its glass, left over
+// the roof. `taken`: the models dealt with here. SR2_WORLD_CARS_AS_IS=1:
+// left to settle_actors, as before
+static void settle_cars(const std::vector<R3DInstance>& list, const float* axes, R3DScene& out, const R3DViewport& v,
+                        std::vector<char>& taken) {
+    static const bool off = getenv("SR2_WORLD_CARS_AS_IS") != nullptr;
+    static const bool log = getenv("SR2_ACTORLOG") != nullptr;
+    struct Lift {
+        float height = -1;   // how far down (-1: not known yet; a little under 0: up)
+        uint32_t skips = 0;
+        uint64_t seen = 0, measured = 0;   // frames
+        float at[3] = {0, 0, 0};           // where its patch was
+        std::vector<uint32_t> pieces;      // the car's models (their keys), for the frames its patch is not drawn
+    };
+    static std::unordered_map<uint64_t, Lift> lifts;
+    if (off) return;
+    const float *ax = axes, *up = axes + 3, *az = axes + 6;
+    auto dot = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+    const float reach = 250.0f;   // metres from the camera
+    // A car's patch: a model of black, self-lit, untextured see-through polygons, the size of a car
+    struct Car {
+        size_t patch;
+        float lo[3], hi[3];
+        size_t first, end;   // its corners among the queries
+        float down;
+        uint64_t lift;
+    };
+    std::vector<Car> cars;
+    std::vector<GroundQuery> queries;
+    for (size_t n = 0; n < list.size(); n++) {
+        const R3DInstance& in = list[n];
+        if (same_axes(in.axes, axes) || in.opaque[1] > in.opaque[0] || in.trans[1] <= in.trans[0]) continue;
+        if (dot(in.origin, in.origin) > reach * reach) continue;
+        const R3DVertex& x0 = out.vertices[v.trans_first + in.trans[0]];
+        if ((x0.flags & (R3D_LUMINOUS | R3D_TEXTURED)) != R3D_LUMINOUS || (x0.color & 0x00FFFFFFu) != 0) continue;
+        Car c{n, {1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}, queries.size(), 0, 0, (uint64_t(in.key) << 32) | in.model};
+        for (uint32_t i = in.trans[0]; i < in.trans[1]; i++) {
+            const R3DVertex& x = out.vertices[v.trans_first + i];
+            float p[3] = {dot(x.pos, ax), dot(x.pos, up), dot(x.pos, az)};
+            for (int k = 0; k < 3; k++) c.lo[k] = std::min(c.lo[k], p[k]), c.hi[k] = std::max(c.hi[k], p[k]);
+            if ((i - in.trans[0]) % 3 == 0) queries.push_back({p[0], p[1], p[2]});
+        }
+        float longest = std::max(c.hi[0] - c.lo[0], c.hi[2] - c.lo[2]);
+        if (longest < 2.5f || longest > 7.0f || c.hi[1] - c.lo[1] > 3.0f) {
+            queries.resize(c.first);   // (some other dark thing)
+            continue;
+        }
+        c.end = queries.size();
+        cars.push_back(c);
+    }
+    for (auto it = lifts.begin(); it != lifts.end();)
+        it = out.frame - it->second.seen > 30 ? lifts.erase(it) : std::next(it);
+    if (cars.empty() && lifts.empty()) return;
+    if (!cars.empty()) ground_under(list, axes, out, v, queries);
+    for (Car& c : cars) {
+        const R3DInstance& in = list[c.patch];
+        std::vector<float> gaps;
+        for (size_t q = c.first; q < c.end; q++)
+            if (queries[q].ground > -1e29f) gaps.push_back(queries[q].h - queries[q].ground);
+        float raw = -1;
+        if (gaps.size() >= 8) {
+            std::nth_element(gaps.begin(), gaps.begin() + gaps.size() / 2, gaps.end());
+            raw = gaps[gaps.size() / 2];
+        }
+        Lift& lift = lifts[c.lift];
+        float at[3], moved = 0;
+        for (int k = 0; k < 3; k++) at[k] = 0.5f * (c.lo[k] + c.hi[k]), moved = std::max(moved, std::fabs(at[k] - lift.at[k]));
+        // (another camera, another moment of the demo: nothing to follow on from)
+        uint64_t frames = out.frame - lift.seen;
+        if (frames > 30 || moved > 3.0f * float(frames)) lift.height = -1, lift.skips = 0;
+        lift.seen = out.frame;
+        lift.pieces.clear();
+        memcpy(lift.at, at, sizeof at);
+        // (under the road too, where the game's ground dips below the one it draws: the car comes up)
+        bool measured = raw > -0.15f && raw < 0.45f;
+        if (measured) lift.measured = out.frame;
+        else if (out.frame - lift.measured > 120) lift.height = -1;
+        if (measured) {
+            if (lift.height < -0.5f) lift.height = raw, lift.skips = 0;
+            else if (std::fabs(raw - lift.height) <= 0.1f) lift.height += 0.5f * (raw - lift.height), lift.skips = 0;
+            else if (++lift.skips >= 30) lift.height = raw, lift.skips = 0;   // (a kerb under the patch is not followed, unless it stays)
+        }
+        c.down = lift.height < -0.5f ? 0.0f : lift.height;
+        if (log)
+            printf("[car] frame %llu world car %06X at %.1f %.1f %.1f corners %zu raw %.3f down %.3f\n",
+                   (unsigned long long)out.frame, in.model, at[0], at[1], at[2], gaps.size(), raw, c.down);
+    }
+    std::unordered_map<uint32_t, float> held;
+    for (const auto& [key, lift] : lifts)
+        if (lift.seen != out.frame && lift.height > -0.5f)
+            for (uint32_t piece : lift.pieces) held[piece] = lift.height;
+    // Each model drawn over a patch (its origin: the car's, a wheel's) is that
+    // car's. A patch with no car over it is left alone: in a race the cars near
+    // the camera are in viewports of their own, over patches in the world like
+    // these (R3DSceneBuilder::settle_player_car measures and moves those)
+    std::vector<int> owner(list.size(), -1);
+    std::vector<uint32_t> solid(cars.size(), 0);
+    for (size_t n = 0; n < list.size(); n++) {
+        const R3DInstance& in = list[n];
+        if (same_axes(in.axes, axes)) continue;
+        float u = dot(in.origin, ax), h = dot(in.origin, up), w = dot(in.origin, az);
+        float nearest = 1e30f;
+        for (size_t i = 0; i < cars.size(); i++) {
+            const Car& c = cars[i];
+            if (n == c.patch) {
+                owner[n] = int(i);
+                break;
+            }
+            if (u < c.lo[0] - 0.5f || u > c.hi[0] + 0.5f || w < c.lo[2] - 0.5f || w > c.hi[2] + 0.5f) continue;
+            if (h < c.lo[1] - 1.0f || h > c.hi[1] + 4.0f) continue;
+            float du = u - 0.5f * (c.lo[0] + c.hi[0]), dw = w - 0.5f * (c.lo[2] + c.hi[2]);
+            if (du * du + dw * dw < nearest) nearest = du * du + dw * dw, owner[n] = int(i);
+        }
+        if (owner[n] >= 0) solid[owner[n]] += in.opaque[1] - in.opaque[0];
+    }
+    for (size_t n = 0; n < list.size(); n++) {
+        const R3DInstance& in = list[n];
+        if (same_axes(in.axes, axes)) continue;
+        float down = 0;
+        if (owner[n] >= 0) {
+            const Car& c = cars[owner[n]];
+            if (solid[owner[n]] < 300) continue;
+            down = c.down - (n == c.patch ? 0.03f : 0.0f);   // (the patch on the road itself would flicker through it)
+            lifts[c.lift].pieces.push_back(in.key);
+        } else {
+            // ... or was a car's while its patch was drawn, a moment ago (the game leaves the patch out now and then)
+            auto it = held.find(in.key);
+            if (it == held.end()) continue;
+            down = it->second;
+        }
+        taken[n] = 1;
+        if (std::fabs(down) <= 0.002f) continue;
+        auto lower = [&](R3DVertex& x) {
+            for (int k = 0; k < 3; k++) x.pos[k] -= down * up[k], x.prev[k] -= down * up[k];
+        };
+        for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++) lower(out.vertices[v.opaque_first + k]);
+        for (uint32_t k = in.trans[0]; k < in.trans[1]; k++) lower(out.vertices[v.trans_first + k]);
+        for (uint32_t k = in.back[0]; k < in.back[1] && v.back_first + k < out.backs.size(); k++) lower(out.backs[v.back_first + k]);
+    }
+}
+
 // Sega Rally 2: some of the models that stand on the ground hang a little
 // above it in the game's data (the flagman at the start line, ~12 cm). The
 // game's dark patch under them hid it; the traced sun shadows showed a lit
 // strip between his shoes and their shadow, as if he floated. Each model
 // near the camera (its pieces, turned their own way, taken together where
-// they touch: a man's limbs, a car's body and wheels) whose lowest point is
-// up to 30 cm above the highest surface of the scenery below it is set down
-// on it (fading out to 60 cm: not a car in the air). In a race the rivals'
-// cars in the world already stand on the road (within 1 cm) and stay.
-// The cars of the attract's demos (and of the replays) are all models of
-// the world, kept 15 cm and more above the road like the player's in a race,
-// and filmed through long lenses from 30 to 50 m and beyond: so the cars'
-// pieces (their specular bodywork, their dark patch) are looked at much
-// farther than the rest, and a model's see-through pieces (a car's glass,
-// its painted shine, its patch: models of their own without a solid
-// polygon) go down with it. Left behind, the glass hung over the roof of
-// the car set down, as if panels were missing; the patch stops just clear
-// of the road. SR2_ACTORS_NEAR=1: only what is solid and near, as before
+// they touch: a man's limbs, a car's body and wheels; the see-through ones
+// too, models without a solid polygon: the glass of a car) whose lowest
+// point is up to 30 cm above the highest surface of the scenery below it is
+// set down on it (fading out to 60 cm: not a car in the air). In a race the
+// rivals' cars in the world already stand on the road (within 1 cm) and
+// stay; the cars over a patch of their own are settle_cars' business
 static void settle_actors(const std::vector<R3DInstance>& list, const float* axes, R3DScene& out, const R3DViewport& v) {
     static const bool off = getenv("SR2_ACTORS_AS_IS") != nullptr;   // (as the game places them, to compare)
-    static const bool near_only = getenv("SR2_ACTORS_NEAR") != nullptr;
     if (off) return;
+    std::vector<char> taken(list.size(), 0);
+    settle_cars(list, axes, out, v, taken);
     const float *ax = axes, *up = axes + 3, *az = axes + 6;
     auto dot = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
-    const float reach = 40.0f, car_reach = 250.0f;   // metres from the camera
-    // A car's dark patch: a model of black, self-lit, untextured see-through polygons
-    auto is_patch = [&](const R3DInstance& in) {
-        if (in.opaque[1] > in.opaque[0] || in.trans[1] <= in.trans[0]) return false;
-        const R3DVertex& x = out.vertices[v.trans_first + in.trans[0]];
-        return (x.flags & (R3D_LUMINOUS | R3D_TEXTURED)) == R3D_LUMINOUS && (x.color & 0x00FFFFFFu) == 0;
-    };
+    const float reach = 40.0f;   // metres from the camera
     // The models' pieces near the camera, as boxes in (across x, height, across z)
     struct Piece {
         const R3DInstance* in;
@@ -145,14 +336,12 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
         int group;
     };
     std::vector<Piece> pieces;
-    for (const R3DInstance& in : list) {
-        if (same_axes(in.axes, axes)) continue;
+    for (size_t n = 0; n < list.size(); n++) {
+        const R3DInstance& in = list[n];
+        if (taken[n] || same_axes(in.axes, axes)) continue;
         bool solid = in.opaque[1] > in.opaque[0];
-        if (!solid && (near_only || in.trans[1] <= in.trans[0])) continue;
-        const R3DVertex& first = out.vertices[solid ? v.opaque_first + in.opaque[0] : v.trans_first + in.trans[0]];
-        bool car = !near_only && ((first.flags & R3D_SPECULAR) || is_patch(in));
-        float far = car ? car_reach : reach;
-        if (dot(in.origin, in.origin) > far * far) continue;
+        if (!solid && in.trans[1] <= in.trans[0]) continue;
+        if (dot(in.origin, in.origin) > reach * reach) continue;
         Piece p{&in, {1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}, int(pieces.size())};
         auto take = [&](const R3DVertex& x) {
             float c[3] = {dot(x.pos, ax), dot(x.pos, up), dot(x.pos, az)};
@@ -176,19 +365,15 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
                 if (pieces[i].lo[k] > pieces[j].hi[k] + 0.1f || pieces[j].lo[k] > pieces[i].hi[k] + 0.1f) touch = false;
             if (touch) pieces[root(int(i))].group = root(int(j));
         }
-    // Each model's lowest point
-    struct Model {
-        float u, h, w;           // its lowest point
-        float ground = -1e30f;   // the highest surface of the scenery below it
-    };
+    // Each model's lowest point (of its solid polygons), and the scenery under it
     std::vector<int> model_of(pieces.size(), -1);
-    std::vector<Model> models;
+    std::vector<GroundQuery> models;
     std::vector<int> index(pieces.size(), -1);
     for (size_t i = 0; i < pieces.size(); i++) {
         int r = root(int(i));
         if (index[r] < 0) index[r] = int(models.size()), models.push_back({0, 1e30f, 0});
         model_of[i] = index[r];
-        Model& m = models[index[r]];
+        GroundQuery& m = models[index[r]];
         const R3DInstance& in = *pieces[i].in;
         for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++) {
             const R3DVertex& x = out.vertices[v.opaque_first + k];
@@ -196,56 +381,22 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
             if (h < m.h) m.h = h, m.u = dot(x.pos, ax), m.w = dot(x.pos, az);
         }
     }
-    // The scenery's triangles under them: the models in cells of 2 m across
-    const float cell = 2.0f;
-    auto cell_of = [&](float u, float w) {
-        return (uint64_t(uint32_t(int32_t(std::floor(u / cell)))) << 32) | uint32_t(int32_t(std::floor(w / cell)));
-    };
-    std::vector<std::pair<uint64_t, int>> cells;
-    for (size_t m = 0; m < models.size(); m++) cells.push_back({cell_of(models[m].u, models[m].w), int(m)});
-    std::sort(cells.begin(), cells.end());
-    for (const R3DInstance& in : list) {
-        if (!same_axes(in.axes, axes)) continue;
-        for (uint32_t i = in.opaque[0]; i + 2 < in.opaque[1]; i += 3) {
-            const R3DVertex* t = &out.vertices[v.opaque_first + i];
-            float u[3], h[3], w[3];
-            for (int k = 0; k < 3; k++) u[k] = dot(t[k].pos, ax), h[k] = dot(t[k].pos, up), w[k] = dot(t[k].pos, az);
-            float u0 = std::min({u[0], u[1], u[2]}), u1 = std::max({u[0], u[1], u[2]});
-            float w0 = std::min({w[0], w[1], w[2]}), w1 = std::max({w[0], w[1], w[2]});
-            if (u1 - u0 > 60.0f || w1 - w0 > 60.0f) continue;   // (huge ones: none is ground near a model)
-            for (float cu = std::floor(u0 / cell) * cell; cu <= u1; cu += cell)
-                for (float cw = std::floor(w0 / cell) * cell; cw <= w1; cw += cell) {
-                    uint64_t key = cell_of(cu + 0.5f * cell, cw + 0.5f * cell);
-                    auto it = std::lower_bound(cells.begin(), cells.end(), std::make_pair(key, -1));
-                    for (; it != cells.end() && it->first == key; ++it) {
-                        Model& m = models[it->second];
-                        // Inside the triangle across (barycentric weights)
-                        float d = (w[1] - w[2]) * (u[0] - u[2]) + (u[2] - u[1]) * (w[0] - w[2]);
-                        if (std::fabs(d) < 1e-6f) continue;
-                        float a = ((w[1] - w[2]) * (m.u - u[2]) + (u[2] - u[1]) * (m.w - w[2])) / d;
-                        float b = ((w[2] - w[0]) * (m.u - u[2]) + (u[0] - u[2]) * (m.w - w[2])) / d;
-                        if (a < 0 || b < 0 || a + b > 1) continue;
-                        float g = a * h[0] + b * h[1] + (1 - a - b) * h[2];
-                        if (g <= m.h + 0.3f) m.ground = std::max(m.ground, g);   // (not a roof above it)
-                    }
-                }
-        }
-    }
+    ground_under(list, axes, out, v, models);
     static const bool log = getenv("SR2_ACTORLOG") != nullptr;
     for (size_t i = 0; i < pieces.size(); i++) {
-        const Model& m = models[model_of[i]];
+        const GroundQuery& m = models[model_of[i]];
         float gap = m.h - m.ground;
         float down = gap <= 0.3f ? gap : std::max(0.0f, 0.6f - gap);
         if (log && root(int(i)) == int(i))
             printf("[actor] model at %.1f %.1f %.1f gap %.3f down %.3f\n", m.u, m.h, m.w, gap, down);
-        const R3DInstance& in = *pieces[i].in;
-        if (is_patch(in)) down -= 0.03f;   // (on the road itself, the two would flicker through each other)
         if (down <= 0.002f) continue;
+        const R3DInstance& in = *pieces[i].in;
         auto lower = [&](R3DVertex& x) {
             for (int k = 0; k < 3; k++) x.pos[k] -= down * up[k], x.prev[k] -= down * up[k];
         };
         for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++) lower(out.vertices[v.opaque_first + k]);
         for (uint32_t k = in.trans[0]; k < in.trans[1]; k++) lower(out.vertices[v.trans_first + k]);
+        for (uint32_t k = in.back[0]; k < in.back[1] && v.back_first + k < out.backs.size(); k++) lower(out.backs[v.back_first + k]);
     }
 }
 
