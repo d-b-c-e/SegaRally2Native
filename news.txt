@@ -13,6 +13,10 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[6] 12 November 2026
+- Attract demos: the cars now sit on the road instead of hovering over it, and keep their windows in place.
+- Smooth motion: the wheels no longer show through the bodywork of a car coming fast at the camera.
+
 [5] 12 November 2026
 - Closer to the arcade: the cars' white paint no longer looks grey, with or without ray tracing, and sunny stages are no longer darkened.
 - BUY ME A COFFEE has moved to MORE RECOMPS.
