@@ -1166,6 +1166,17 @@ void R3DRenderer::update_atmosphere(const ScreenLayout& lay, uint32_t target_w, 
         shadow_frame_ = false;
     }
     u.soft[2] = hdr_ ? 1.0f : 0.0f;
+    // HDR tone curve (compose.frag): where the roll-off of the highlights
+    // starts, and the least exposure a bright scene is given.
+    // SR2_TONE=knee,min to compare (the old ones: 0.8,0.9)
+    static float tone[2] = {0.9f, 1.0f};
+    static const bool tone_read = [] {
+        if (const char* e = getenv("SR2_TONE")) sscanf(e, "%f,%f", &tone[0], &tone[1]);
+        return true;
+    }();
+    (void)tone_read;
+    u.soft[3] = tone[0];
+    u.sunlight[3] = tone[1];
     // SUN: more contrast in clear outdoor scenes (sunlit, little of the game's
     // own fog); the fogged, dark and indoor scenes keep the game's light
     if (w && sun_ && w->sun_intensity > 0.3f) {
@@ -1189,6 +1200,18 @@ void R3DRenderer::update_atmosphere(const ScreenLayout& lay, uint32_t target_w, 
         u.spot_color[3] = w->spot_start;
         u.spot_fog[3] = w->spot_extent;
     }
+    // Fill light on the player's car where the traced bounce is not there
+    // (r3d.frag; SR2_CAR_FILL=without,with to compare, 0 = none)
+    // (0.3 matched the arcade's Lancer at the start, but on the Corolla's
+    // side in the shade its whites came out brighter than the arcade's)
+    static float car_fill[2] = {0.2f, 0.1f};
+    static const bool fill_read = [] {
+        if (const char* e = getenv("SR2_CAR_FILL")) sscanf(e, "%f,%f", &car_fill[0], &car_fill[1]);
+        return true;
+    }();
+    (void)fill_read;
+    u.gi[0] = car_fill[0];
+    u.mirror[0] = car_fill[1];
     if (rt_gi_ && gi_tune().strength > 0) {   // the player's car's and the dust's share of the global illumination (r3d.frag, r3d.vert)
         u.gi[1] = gi_tune().strength;
         u.gi[2] = 2.0f * gi_tune().rays;   // the car's rays: four, eight on HIGH

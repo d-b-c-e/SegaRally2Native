@@ -13,6 +13,10 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[5] 12 November 2026
+- Closer to the arcade: the cars' white paint no longer looks grey, with or without ray tracing, and sunny stages are no longer darkened.
+- BUY ME A COFFEE has moved to MORE RECOMPS.
+
 [4] 11 November 2026
 - Shadows: without ray tracing the cars have the arcade's shadow underneath again, so they no longer seem to float.
 - Without ray tracing, the sun's shadows have smooth edges instead of blocky steps.

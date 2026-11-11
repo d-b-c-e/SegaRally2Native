@@ -242,7 +242,9 @@ vec4 front_layer(vec2 q) {
 // HDR lighting: below the knee the image is left as the original drew it;
 // above it the highlights roll off smoothly towards white instead of clipping
 vec3 tone_curve(vec3 x) {
-    const float knee = 0.8;
+    // (0.8 until the comparison with the arcade: its white paint and sunlit
+    // whites came out light grey, 0.93 at most; at 0.9, 0.96)
+    float knee = atm.soft.w > 0.0 ? atm.soft.w : 0.8;
     vec3 over = max(x - knee, 0.0);
     return min(x, vec3(knee)) + (1.0 - knee) * (1.0 - exp(-over / (1.0 - knee)));
 }
@@ -253,7 +255,10 @@ float exposure() {
     // Menus and selection screens (no game world): as the original drew them
     if (atm.view.x == 0.0) return 1.0;
     float average = exp(texelFetch(exposure_log, ivec2(0), 0).r);
-    return clamp(pow(0.17 / max(average, 1e-3), 0.35), 0.9, 1.15);
+    // (a bright stage used to be closed down to 0.9: in the sunlit desert,
+    // already brighter with SUN, everything came out darker than the arcade)
+    float least = atm.sunlight.w > 0.0 ? atm.sunlight.w : 0.9;
+    return clamp(pow(0.17 / max(average, 1e-3), 0.35), least, max(least, 1.15));
 }
 
 void main() {

@@ -568,6 +568,27 @@ void main() {
             light += back * (0.6 * atm.gi.y / float(RAYS));
         }
 #endif
+        // Without the traced bounce above (no ray tracing, or GLOBAL
+        // ILLUMINATION off) the player's car had only the game's ambient on
+        // the sides away from the sun (the other cars, in the world, miss the
+        // bounce of the ambient occlusion pass too): beside the arcade, and beside the same
+        // car with ray tracing, its white paint came out a dull grey. A fixed
+        // fill (0.2 of the sun; 0.1 with the bounce) in the colour of the sunlit dirt road, stronger on the faces
+        // turned to the ground, stands in for the light the ground throws back
+        // (and the other cars, ACTOR with specular paint, as in the replays
+        // and the attract: not the people, who are self-lit cards)
+        bool car_body = (flags & CAR) != 0u || (flags & (ACTOR | SPECULAR)) == (ACTOR | SPECULAR);
+        // (with the traced bounce, a smaller share: the cars in the world are
+        // also darkened by the occlusion pass, and the bounce alone left them
+        // darker than without ray tracing)
+        float fill = atm.gi.y > 0.0 ? atm.mirror.x : atm.gi.x;
+        if (fill > 0.0 && car_body && length(normal) > 0.0) {
+            vec3 fn = normalize(normal);
+            if (dot(fn, view_pos) > 0.0) fn = -fn;
+            float down = 0.5 - 0.5 * dot(fn, normalize(atm.axes[1].xyz));
+            float world_sun = max(vp.sun.w, 0.0) * (atm.sunlight.z > 0.0 ? atm.sunlight.x : 1.0);
+            light += vec3(1.0, 0.92, 0.80) * world_sun * fill * (0.6 + 0.4 * down);
+        }
         // The spotlight: a flat lobe, as in the original
         if ((flags & WORLD) != 0u && atm.spot.z > 0.0) light += atm.spot_color.rgb * spotlight().x;
         c.rgb *= light;
