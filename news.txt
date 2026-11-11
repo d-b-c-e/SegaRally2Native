@@ -13,6 +13,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[7] 12 November 2026
+- Steering wheels: the pedals of a Logitech G29 (and other wheels like it) no longer read as pressed when you let go.
+
 [6] 12 November 2026
 - Attract demos: the cars now sit on the road instead of hovering over it, and keep their windows in place.
 - Smooth motion in the attract demos and replays: the wheels no longer show through the bodywork of a car coming fast at the camera.

@@ -13,6 +13,8 @@
 namespace {
 
 constexpr const char* INI_FILE = "save/wheel.ini";
+constexpr int NO_REST = 100000;            // a pedal's resting value not given in wheel.ini
+constexpr uint64_t REST_LEARN_MS = 500;    // after opening, the first real reading is the rest
 
 struct Config {
     int steer_axis = 0;
@@ -22,6 +24,7 @@ struct Config {
     bool combined_pedals = false;   // one axis: accelerator one way, brake the other
     int gas_axis = 1, brake_axis = 2;
     bool combined_gas_negative = true;
+    int gas_rest = NO_REST, brake_rest = NO_REST;   // set by hand in wheel.ini; else learnt
     int shift_up = 4, shift_down = 5, view = 3, handbrake = 1, coin = 8, start = 9;
     int gear[4] = {-1, -1, -1, -1};   // H shifter buttons for gears 1..4
     float ffb_strength = 0.7f;    // the game's motor force
@@ -46,11 +49,15 @@ const char* INI_TEXT =
     "; Pedals: one axis each, or combined_pedals = 1 for one axis (accelerator one way,\n"
     "; brake the other: combined_gas_negative = 1 when the accelerator moves it below\n"
     "; the middle). Their resting position is learnt when the wheel is plugged in or the\n"
-    "; game starts, so keep your feet off them then.\n"
+    "; game starts, so keep your feet off them then. If a pedal still reads as pressed\n"
+    "; when released, give its resting value (from SR2_WHEEL_LOG) by removing the ';'\n"
+    "; below, for example gas_rest = 32767 and brake_rest = 32767 on a Logitech G29.\n"
     "gas_axis = %d\n"
     "brake_axis = %d\n"
     "combined_pedals = %d\n"
     "combined_gas_negative = %d\n"
+    "; gas_rest = 32767\n"
+    "; brake_rest = 32767\n"
     "\n"
     "; Buttons\n"
     "shift_up = %d\n"
@@ -104,6 +111,8 @@ Config read_ini() {
         else if (k == "brake_axis") c.brake_axis = i;
         else if (k == "combined_pedals") c.combined_pedals = i != 0;
         else if (k == "combined_gas_negative") c.combined_gas_negative = i != 0;
+        else if (k == "gas_rest") c.gas_rest = std::clamp(i, -32768, 32767);
+        else if (k == "brake_rest") c.brake_rest = std::clamp(i, -32768, 32767);
         else if (k == "shift_up") c.shift_up = i;
         else if (k == "shift_down") c.shift_down = i;
         else if (k == "view") c.view = i;
@@ -124,6 +133,8 @@ struct Wheel {
     uint32_t id = 0;
     int axes = 0, buttons = 0;
     int16_t rest[16] = {};
+    bool rest_known[16] = {};   // false: rest is still SDL's first value, which can be a stray 0
+    uint64_t opened_ms = 0;
     bool was_down[64] = {};
     int16_t last_axis[16] = {};
     SDL_Haptic* haptic = nullptr;
@@ -263,11 +274,22 @@ void wheels_added(uint32_t id) {
     w.id = id;
     w.axes = axes;
     w.buttons = std::min(SDL_GetNumJoystickButtons(j), 64);
+    w.opened_ms = SDL_GetTicks();
     for (int a = 0; a < std::min(axes, 16); a++) {
         int16_t v = 0;
         if (!SDL_GetJoystickAxisInitialState(j, a, &v)) v = SDL_GetJoystickAxis(j, a);
+        // Some wheels (a Logitech G29's pedals) give 0 here before their first real
+        // report: a 0 is checked against the first readings in wheels_poll
         w.rest[a] = w.last_axis[a] = v;
+        w.rest_known[a] = v != 0;
     }
+    auto set_rest = [&](int a, int v) {
+        if (v == NO_REST || a < 0 || a >= std::min(axes, 16)) return;
+        w.rest[a] = int16_t(v);
+        w.rest_known[a] = true;
+    };
+    set_rest(g_cfg.gas_axis, g_cfg.gas_rest);
+    set_rest(g_cfg.brake_axis, g_cfg.brake_rest);
     const char* name = SDL_GetJoystickName(j);
     g_state = WheelState{};
     g_state.connected = true;
@@ -291,6 +313,22 @@ void wheels_poll(bool focused) {
     WheelState& st = g_state;
     st.shift_up = st.shift_down = st.coin = st.start = st.moved = false;
     if (!w.joy) return;
+    bool learning = SDL_GetTicks() - w.opened_ms < REST_LEARN_MS;
+    for (int a = 0; a < std::min(w.axes, 16); a++) {
+        if (w.rest_known[a]) continue;
+        int16_t v = SDL_GetJoystickAxis(w.joy, a);
+        if (v != 0) {
+            if (!learning) {   // too late: this may be a foot on a pedal that rests at 0
+                w.rest_known[a] = true;
+                continue;
+            }
+            w.rest[a] = v;
+            w.rest_known[a] = true;
+            if (g_log) printf("[wheel] axis %d rest %d\n", a, v);
+        } else if (!learning) {
+            w.rest_known[a] = true;   // it really rests at 0
+        }
+    }
     if (g_log) {
         for (int a = 0; a < std::min(w.axes, 16); a++) {
             int16_t v = SDL_GetJoystickAxis(w.joy, a);

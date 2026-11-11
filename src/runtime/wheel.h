@@ -8,7 +8,9 @@
 //     degree wheel set to 900 in its driver wants about 0.3)
 //   - pedals: one axis each, or one combined axis (accelerator one way, brake
 //     the other). Their resting value is learnt when the wheel arrives (the
-//     pedals let go), so it does not matter which way an axis runs
+//     pedals let go), so it does not matter which way an axis runs; a 0 from
+//     SDL is checked against the first real readings (half a second), and
+//     gas_rest / brake_rest in wheel.ini can give it by hand
 //   - buttons: shift up / down (the paddles), VIEW CHANGE, hand brake, coin,
 //     start, and an H shifter's gears 1-4 when the wheel has one
 //   - force feedback (SDL haptic): the game's own motor force as a constant
