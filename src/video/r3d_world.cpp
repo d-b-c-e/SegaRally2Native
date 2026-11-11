@@ -114,14 +114,30 @@ static void settle_scenery(const std::vector<R3DInstance>& list, const float* ax
 // near the camera (its pieces, turned their own way, taken together where
 // they touch: a man's limbs, a car's body and wheels) whose lowest point is
 // up to 30 cm above the highest surface of the scenery below it is set down
-// on it (fading out to 60 cm: not a car in the air). The rivals' cars
-// already stand on the road (within 1 cm) and are left as they are
+// on it (fading out to 60 cm: not a car in the air). In a race the rivals'
+// cars in the world already stand on the road (within 1 cm) and stay.
+// The cars of the attract's demos (and of the replays) are all models of
+// the world, kept 15 cm and more above the road like the player's in a race,
+// and filmed through long lenses from 30 to 50 m and beyond: so the cars'
+// pieces (their specular bodywork, their dark patch) are looked at much
+// farther than the rest, and a model's see-through pieces (a car's glass,
+// its painted shine, its patch: models of their own without a solid
+// polygon) go down with it. Left behind, the glass hung over the roof of
+// the car set down, as if panels were missing; the patch stops just clear
+// of the road. SR2_ACTORS_NEAR=1: only what is solid and near, as before
 static void settle_actors(const std::vector<R3DInstance>& list, const float* axes, R3DScene& out, const R3DViewport& v) {
     static const bool off = getenv("SR2_ACTORS_AS_IS") != nullptr;   // (as the game places them, to compare)
+    static const bool near_only = getenv("SR2_ACTORS_NEAR") != nullptr;
     if (off) return;
     const float *ax = axes, *up = axes + 3, *az = axes + 6;
     auto dot = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
-    const float reach = 40.0f;   // metres from the camera
+    const float reach = 40.0f, car_reach = 250.0f;   // metres from the camera
+    // A car's dark patch: a model of black, self-lit, untextured see-through polygons
+    auto is_patch = [&](const R3DInstance& in) {
+        if (in.opaque[1] > in.opaque[0] || in.trans[1] <= in.trans[0]) return false;
+        const R3DVertex& x = out.vertices[v.trans_first + in.trans[0]];
+        return (x.flags & (R3D_LUMINOUS | R3D_TEXTURED)) == R3D_LUMINOUS && (x.color & 0x00FFFFFFu) == 0;
+    };
     // The models' pieces near the camera, as boxes in (across x, height, across z)
     struct Piece {
         const R3DInstance* in;
@@ -130,14 +146,21 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
     };
     std::vector<Piece> pieces;
     for (const R3DInstance& in : list) {
-        if (same_axes(in.axes, axes) || in.opaque[1] <= in.opaque[0]) continue;
-        if (dot(in.origin, in.origin) > reach * reach) continue;
+        if (same_axes(in.axes, axes)) continue;
+        bool solid = in.opaque[1] > in.opaque[0];
+        if (!solid && (near_only || in.trans[1] <= in.trans[0])) continue;
+        const R3DVertex& first = out.vertices[solid ? v.opaque_first + in.opaque[0] : v.trans_first + in.trans[0]];
+        bool car = !near_only && ((first.flags & R3D_SPECULAR) || is_patch(in));
+        float far = car ? car_reach : reach;
+        if (dot(in.origin, in.origin) > far * far) continue;
         Piece p{&in, {1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}, int(pieces.size())};
-        for (uint32_t i = in.opaque[0]; i < in.opaque[1]; i++) {
-            const R3DVertex& x = out.vertices[v.opaque_first + i];
+        auto take = [&](const R3DVertex& x) {
             float c[3] = {dot(x.pos, ax), dot(x.pos, up), dot(x.pos, az)};
             for (int k = 0; k < 3; k++) p.lo[k] = std::min(p.lo[k], c[k]), p.hi[k] = std::max(p.hi[k], c[k]);
-        }
+        };
+        for (uint32_t i = in.opaque[0]; i < in.opaque[1]; i++) take(out.vertices[v.opaque_first + i]);
+        if (!solid)
+            for (uint32_t i = in.trans[0]; i < in.trans[1]; i++) take(out.vertices[v.trans_first + i]);
         pieces.push_back(p);
     }
     if (pieces.empty()) return;
@@ -215,8 +238,9 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
         float down = gap <= 0.3f ? gap : std::max(0.0f, 0.6f - gap);
         if (log && root(int(i)) == int(i))
             printf("[actor] model at %.1f %.1f %.1f gap %.3f down %.3f\n", m.u, m.h, m.w, gap, down);
-        if (down <= 0.002f) continue;
         const R3DInstance& in = *pieces[i].in;
+        if (is_patch(in)) down -= 0.03f;   // (on the road itself, the two would flicker through each other)
+        if (down <= 0.002f) continue;
         auto lower = [&](R3DVertex& x) {
             for (int k = 0; k < 3; k++) x.pos[k] -= down * up[k], x.prev[k] -= down * up[k];
         };
