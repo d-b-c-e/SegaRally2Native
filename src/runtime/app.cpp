@@ -210,6 +210,35 @@ static void save_settings(const FrontendSettings& s) {
     }
 }
 
+// The first run (no anti-aliasing in save/settings.ini yet) picks it for the
+// GPU and the screen instead of MSAA 4x for everyone: with all the ray tracing
+// on, MSAA 4x does not fit in a 120 Hz refresh at 4K even on an RTX 5090 (the
+// 3D pass alone took 8 to 10 ms there, twice what it takes with DLAA; GitHub
+// issue 14), and that was the game's first impression at that size. On an
+// NVIDIA card DLSS is asked for: DLAA, or DLSS QUALITY on a screen larger than
+// 1440p (the game starts in a window, but full screen is the screen's size).
+// A card or a build without DLSS falls back to MSAA as it always did.
+static bool nvidia_card() {
+    DISPLAY_DEVICEA d{};
+    d.cb = sizeof(d);
+    for (DWORD i = 0; EnumDisplayDevicesA(nullptr, i, &d, 0); i++)
+        if (strstr(d.DeviceString, "NVIDIA")) return true;
+    return false;
+}
+
+// The height in pixels of the screen the window is on (0: not known)
+// (debugging aid: SR2_SCREEN_HEIGHT=2160 stands for a screen of that height)
+static int screen_height(HWND hwnd) {
+    if (const char* e = getenv("SR2_SCREEN_HEIGHT")) return atoi(e);
+    MONITORINFOEXA mi{};
+    mi.cbSize = sizeof(mi);
+    DEVMODEA mode{};
+    mode.dmSize = sizeof(mode);
+    if (!GetMonitorInfoA(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) return 0;
+    if (!EnumDisplaySettingsA(mi.szDevice, ENUM_CURRENT_SETTINGS, &mode)) return 0;   // (real pixels, whatever the scaling)
+    return int(std::min(mode.dmPelsWidth, mode.dmPelsHeight));   // (the shorter side: a screen turned upright too)
+}
+
 // The game is a windowed program (no console window of its own). Started from
 // a terminal, its log goes to that terminal; redirected to a file or a pipe
 // (the tests), it goes there as it always did
@@ -232,13 +261,18 @@ int main(int argc, char** argv) {
     // those always start from the same defaults
     g_opt.menu = !options_disable_menu(argc, argv);
     FrontendSettings ini;
+    bool aa_auto = false;   // the first run: the anti-aliasing chosen for the GPU and the screen (nvidia_card above)
     if (g_opt.menu) {   // save/settings.ini, written by the options menu; command-line options win
         ini.load("save/settings.ini");
+        aa_auto = !ini.aa_saved && nvidia_card();
+        if (aa_auto) ini.aa = 1;   // DLAA; DLSS QUALITY or MSAA once the screen and the GPU are known
         options_from_settings(g_opt, ini);
         g_pad_rumble = ini.vibration;
     }
     int exit_code = 0;
     if (!parse_options(g_opt, argc, argv, nullptr, exit_code)) return exit_code;
+    for (int i = 1; i < argc; i++)   // chosen on the command line instead
+        if (strcmp(argv[i], "--aa") == 0 || strcmp(argv[i], "--msaa") == 0) aa_auto = false;
     // What the options set outside the struct: emulation globals and the controls
     g_data_dir = g_opt.data_dir;
     g_frame_limit = g_opt.frame_limit;
@@ -326,6 +360,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     printf("GPU: %s\n", presenter.device_name().c_str());
+    if (aa_auto) g_opt.dlss = screen_height(presenter.hwnd()) > 1440;
     g_pads.init();
     timeBeginPeriod(1);
     QueryPerformanceFrequency(&g_qpf);
@@ -397,6 +432,11 @@ int main(int argc, char** argv) {
     r3d_set_sr2_dust(g_opt.dust);
     renderer.set_sharpen(g_opt.sharpen ? 0.5f : 0.0f);
     if (g_opt.haze > 0) printf("[video] distance haze on (strength %.2f)\n", g_opt.haze);
+    if (aa_auto) {   // what the first run got: the menu shows it, and saves it with the first setting changed
+        if (!renderer.dlaa_active()) g_opt.dlaa = g_opt.dlss = false;
+        ini.aa = g_opt.dlss ? 3 : g_opt.dlaa ? 1 : 0;
+        printf("[video] first run: anti-aliasing chosen for this GPU and screen\n");
+    }
     if (g_opt.dlaa && !renderer.dlaa_active()) printf("[video] DLAA not available: using MSAA\n");
     if (renderer.dlaa_active())
         printf("[video] antialiasing NVIDIA %s, anisotropic filtering %dx%s\n",
