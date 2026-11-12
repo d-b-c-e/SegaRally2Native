@@ -427,7 +427,7 @@ int main(int argc, char** argv) {
     std::vector<int32_t> back_rows(SCREEN_H * 3), back_rows_prev(SCREEN_H * 3, -1);
     uint64_t back_rows_frame = ~0ull, shift_from = ~0ull, shift_to = ~0ull, built_from = ~0ull;
     TextHD text;   // menus, captions and score drawn from vector fonts
-    if ((g_opt.menu || !g_opt.classic_text) && text.init("textures/text")) renderer.set_text_atlas(text);
+    if ((g_opt.menu || !g_opt.classic_hud) && text.init("textures/text")) renderer.set_text_atlas(text);
     std::atomic<bool> capture_2d{false};   // F12 / --shot: the next 2D composition is saved
     // (debugging aid: LW_2D_CAPTURE=1 with --replay saves the snapshot's 2D layers to out/2d)
     if (!g_opt.replay.empty() && getenv("LW_2D_CAPTURE")) capture_2d = true;
@@ -470,6 +470,7 @@ int main(int argc, char** argv) {
     // latest frames, easing down slowly)
     std::shared_ptr<const R3DFrameState> seen;
     double next_period = 1.0 / 57.524, lateness = 0.004;
+    double last_interval = 1.0 / 57.524;   // between the two frames seen before the latest
     DisplayClock display_clock;
 
     struct Snapshot2D {
@@ -606,7 +607,11 @@ int main(int argc, char** argv) {
     // out.vram) for the renderer. One composition at a time (prep_mutex): the
     // 2D packs and the back layers' scroll keep state between them
     auto compose_2d = [&](Layers2D& out) {
-        const TextHD* hd_text = g_opt.classic_text ? nullptr : &text;
+        // HD HUD off (classic_hud): the ROM's own letters and pictures, no
+        // vector text and no 2D replacements (the race HUD's dials, gear box,
+        // co-driver signs and countdown)
+        const bool hd_hud = !g_opt.classic_hud;
+        const TextHD* hd_text = hd_hud ? &text : nullptr;
         if (!hd_text) std::fill(out.text_cells.begin(), out.text_cells.end(), 0u);
         bool capture = capture_2d.exchange(false);
         if (capture) sky.capture();   // F12 also saves the backdrops, for textures/sky
@@ -709,10 +714,10 @@ int main(int argc, char** argv) {
         }
         int offset[3];
         TileGen::front_offset(out.vram.data(), offset);
-        if (!pack2d.empty())
+        if (hd_hud && !pack2d.empty())
             pack2d.apply(out.front.data(), SCREEN_W, front_raw.data(), front_raw_top.data(), out.text_cells.data(),
                          false, front_under.data(), out.back.data() + BACK_MARGIN, BACK_W);
-        if (!pack2d_back.empty())
+        if (hd_hud && !pack2d_back.empty())
             pack2d_back.apply(out.back.data() + BACK_MARGIN, BACK_W, back_raw.data(), back_raw_top.data(),
                               out.text_cells.data(), true, back_under.data());
         out.overlay_brightness = float(offset[0] + offset[1] + offset[2]) / (3 * 255.0f);
@@ -1013,8 +1018,8 @@ int main(int argc, char** argv) {
                     renderer.set_global_illumination(g_opt.gi = s.gi);
                     r3d_set_sr2_dust(g_opt.dust = s.dust);
                     renderer.set_sharpen((g_opt.sharpen = s.sharpen) ? 0.5f : 0.0f);
-                    if (g_opt.classic_text != !s.hd_text) {
-                        g_opt.classic_text = !s.hd_text;
+                    if (g_opt.classic_hud != !s.hd_hud) {
+                        g_opt.classic_hud = !s.hd_hud;
                         shown = ~0ull;   // compose the 2D layer again even while the game stands still
                     }
                     if (g_opt.interp != s.smooth) {
@@ -1070,10 +1075,16 @@ int main(int argc, char** argv) {
             menu_was = frontend.screen();
             if (!frontend.active()) pad_in_menu = false;   // a menu opened later starts with the mouse
             {   // the menus' music: over the backdrop, not over a paused game nor during the splash
-                static MenuMusic music;
+                static MenuMusic& music = *new MenuMusic;   // never destroyed: the audio thread reads it to the end
                 static bool music_tried = false;
                 static double music_time = qpc_seconds();
-                if (!music_tried) music_tried = true, music.open();
+                if (!music_tried) {
+                    music_tried = true;
+                    if (music.open())
+                        g_audio.set_extra([](void* m, float* out, size_t frames, int channels, int rate) {
+                            static_cast<MenuMusic*>(m)->mix(out, frames, channels, rate);
+                        }, &music);
+                }
                 double t = qpc_seconds();
                 music.update(frontend.active() && !frontend.over_game() && !frontend.splash() && !frontend.starting &&
                                  frontend.settings.menu_music,
@@ -1184,7 +1195,18 @@ int main(int argc, char** argv) {
         if (ready && built && ready->state->frame < built->frame) ready.reset();   // made before the switch
         if (ready) latest = ready->state;
         if (latest && latest != seen) {
-            if (seen) next_period = std::clamp(latest->time - seen->time, 1.0 / 240, 0.1);
+            // The time between the game's frames: the shorter of its last two
+            // intervals. One frame further from the last than the rest (the game
+            // skips a vblank as a screen changes, or a frame is left out because
+            // the one before took long to make ready, as when a stage starts and
+            // its textures come in) is not the game's pace: taken as such it put
+            // the picture a frame period back for one image and forward again
+            // with the next frame, the motion going back and then jumping
+            if (seen) {
+                double interval = std::clamp(latest->time - seen->time, 1.0 / 240, 0.1);
+                next_period = std::min(interval, last_interval);
+                last_interval = interval;
+            }
             // How long after its vblank the frame was ready to take, plus how
             // far ahead of now this image's moment is: from the preparation
             // thread, when it finished; from the game, when this loop saw it
