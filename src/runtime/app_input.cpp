@@ -57,7 +57,7 @@ void poll_keyboard(HWND hwnd) {
         return;
     }
     auto down = [](int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; };
-    if (g_menu_open) {
+    if (g_menu_open || wheelkit_panel_open()) {
         in.test = in.service = false;
         in.coin[0] = in.coin[1] = in.start[0] = in.start[1] = false;
         in.release_car();

@@ -33,7 +33,6 @@ public:
     // Motor outputs (0x7F = no force), for gamepad rumble later
     uint8_t motor_x() const { return out42_; }
     uint8_t motor_y() const { return out45_; }
-    uint8_t motor_control() const { return out46_; }   // port 0x2E: what the motor value means
 
 private:
     static uint8_t mem_read(void* self, uint16_t a);

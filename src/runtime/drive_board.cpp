@@ -1,4 +1,5 @@
 #include "drive_board.h"
+#include "wheelkit_host.h"
 
 #include <algorithm>
 #include <cstring>
@@ -113,7 +114,7 @@ void DriveBoard::out(uint8_t port, uint8_t v) {
         reply_ = v;
         if (v == 0xCB) initialized_ = true;
         break;
-    case 0x2A: out42_ = v; break;   // motor X
+    case 0x2A: out42_ = v; wheelkit_motor(out46_, v); break;   // motor X
     case 0x2D: out45_ = v; break;   // motor Y
     case 0x2E: out46_ = v; break;   // motor control
     default: break;                 // 7-segment displays, watchdog, parallel ports

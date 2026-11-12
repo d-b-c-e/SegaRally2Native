@@ -1223,7 +1223,7 @@ static void ffb_frame() {
     static float force = 0;
     force += 0.5f * ((float(m[0]) - 128.0f) / 128.0f - force);
     wheel_set_force(std::clamp(force, -1.0f, 1.0f), shake);
-    wheelkit_game_frame(m[0], g_drive.motor_control());
+    wheelkit_game_frame();
 }
 
 void rt_event(Ctx& c) {
