@@ -13,6 +13,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[11] 13 November 2026
+- Steering wheels: Fanatec and other DirectInput wheels should now be detected, with force feedback, and the wheel is listed under SETTINGS > CONTROLS.
+
 [10] 13 November 2026
 - New DIFFICULTY option in the new SETTINGS > GAME tab: from VERY EASY to VERY HARD, the arcade's own setting for the time you get at the start and at each checkpoint.
 
