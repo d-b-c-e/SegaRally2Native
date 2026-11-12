@@ -239,6 +239,8 @@ static int screen_height(HWND hwnd) {
     return int(std::min(mode.dmPelsWidth, mode.dmPelsHeight));   // (the shorter side: a screen turned upright too)
 }
 
+static std::atomic<bool> g_terminal_prompt{false};   // started from a terminal, nothing redirected: its prompt to bring back
+
 // The game is a windowed program (no console window of its own). Started from
 // a terminal, its log goes to that terminal; redirected to a file or a pipe
 // (the tests), it goes there as it always did
@@ -252,6 +254,33 @@ static void attach_parent_console() {
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;   // double click: no console at all
     if (!out_ok) freopen("CONOUT$", "w", stdout);
     if (!err_ok) freopen("CONOUT$", "w", stderr);
+    g_terminal_prompt = !out_ok && !err_ok;   // (something redirected: a script's run, left as it is)
+    atexit(console_prompt);                   // the ways out of main() that return
+}
+
+// A terminal does not wait for a windowed program: its prompt came back as the
+// game started and the log was written after it, so when the game ended the
+// terminal looked busy until Enter was pressed. The game presses it: an Enter
+// in the terminal's input, and the terminal draws its prompt again
+void console_prompt() {
+    if (!g_terminal_prompt.exchange(false)) return;
+    fflush(stdout);
+    HANDLE in = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0,
+                            nullptr);
+    if (in == INVALID_HANDLE_VALUE) return;
+    INPUT_RECORD key[2]{};   // down and up
+    for (int i = 0; i < 2; i++) {
+        key[i].EventType = KEY_EVENT;
+        KEY_EVENT_RECORD& k = key[i].Event.KeyEvent;
+        k.bKeyDown = i == 0;
+        k.wRepeatCount = 1;
+        k.wVirtualKeyCode = VK_RETURN;
+        k.wVirtualScanCode = WORD(MapVirtualKeyA(VK_RETURN, MAPVK_VK_TO_VSC));
+        k.uChar.AsciiChar = '\r';
+    }
+    DWORD written = 0;
+    WriteConsoleInputA(in, key, 2, &written);
+    CloseHandle(in);
 }
 
 int main(int argc, char** argv) {
@@ -1629,5 +1658,6 @@ int main(int argc, char** argv) {
     renderer.shutdown();
     presenter.shutdown();
     g_pads.shutdown();
+    console_prompt();
     ExitProcess(0);
 }
