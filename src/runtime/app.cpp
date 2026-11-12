@@ -470,6 +470,7 @@ int main(int argc, char** argv) {
     // latest frames, easing down slowly)
     std::shared_ptr<const R3DFrameState> seen;
     double next_period = 1.0 / 57.524, lateness = 0.004;
+    double last_interval = 1.0 / 57.524;   // between the two frames seen before the latest
     DisplayClock display_clock;
 
     struct Snapshot2D {
@@ -1184,7 +1185,18 @@ int main(int argc, char** argv) {
         if (ready && built && ready->state->frame < built->frame) ready.reset();   // made before the switch
         if (ready) latest = ready->state;
         if (latest && latest != seen) {
-            if (seen) next_period = std::clamp(latest->time - seen->time, 1.0 / 240, 0.1);
+            // The time between the game's frames: the shorter of its last two
+            // intervals. One frame further from the last than the rest (the game
+            // skips a vblank as a screen changes, or a frame is left out because
+            // the one before took long to make ready, as when a stage starts and
+            // its textures come in) is not the game's pace: taken as such it put
+            // the picture a frame period back for one image and forward again
+            // with the next frame, the motion going back and then jumping
+            if (seen) {
+                double interval = std::clamp(latest->time - seen->time, 1.0 / 240, 0.1);
+                next_period = std::min(interval, last_interval);
+                last_interval = interval;
+            }
             // How long after its vblank the frame was ready to take, plus how
             // far ahead of now this image's moment is: from the preparation
             // thread, when it finished; from the game, when this loop saw it
