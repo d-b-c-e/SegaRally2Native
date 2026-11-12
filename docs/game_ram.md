@@ -224,6 +224,25 @@ Confirmed in headless runs (`--difficulty X`, checkpoint forced with
 difficulty, and its first checkpoint adds 1800 frames (30 s) on NORMAL,
 EASY and VERY EASY, 1680 (28 s) on HARD and 1560 (26 s) on VERY HARD.
 
+Practice rows (0xE62C8) are 0x30 bytes per course id, 0x180 per difficulty.
+Every practice race starts with 60 s; only the **first** extension depends on
+the difficulty, and by much more than in the championship. Seconds (start,
+then each extension in order):
+
+| Difficulty | Desert | Mountain | Snowy | Riviera |
+|---|---|---|---|---|
+| NORMAL | 60, 20, 20, 30, 20, 30 | 60, 32, 25, 30, 25, 30 | 60, 30, 23, 26, 23, 26 | 60, 30, 30, 30, 30 |
+| HARD | 60, **18**, ... | 60, **30**, ... | 60, **28**, ... | 60, **28**, ... |
+| VERY HARD | 60, **13**, ... | 60, **25**, ... | 60, **23**, ... | 60, **23**, ... |
+| VERY EASY | 60, **35**, ... | 60, **47**, ... | 60, **45**, ... | 60, **45**, ... |
+| EASY | 60, **25**, ... | 60, **37**, ... | 60, **35**, ... | 60, **35**, ... |
+
+Confirmed in headless practice runs (`SR2_POKE=22432C=1@960-1100`, checkpoint
+forced with `22CFBC=110@5100-5101`): Desert starts with 3600 frames at every
+difficulty and its first checkpoint adds 2100 / 1500 / 1200 / 1080 / 780
+frames (35 / 25 / 20 / 18 / 13 s) on VERY EASY / EASY / NORMAL / HARD /
+VERY HARD.
+
 The DIFFICULTY option (OPTIONS > GAME, `--difficulty`) rewrites these three
 bits of the RAM copy every frame when they differ (runtime.cpp); the EEPROM
 itself (save/eeprom.bin) keeps the operator's setting.
