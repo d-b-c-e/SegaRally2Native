@@ -94,7 +94,7 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
         default: break;
         }
     }
-    wheels_poll(focused && !menu);
+    wheels_poll(focused, menu, keys_);
     for (int i = 0; i < MAX; i++) {
         Slot& s = slot_[i];
         PadState& st = state_[i];

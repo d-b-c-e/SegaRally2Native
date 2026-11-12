@@ -9,8 +9,10 @@
 //   - pedals: one axis each, or one combined axis (accelerator one way, brake
 //     the other). Their resting value is learnt when the wheel arrives (the
 //     pedals let go), so it does not matter which way an axis runs; a 0 from
-//     SDL is checked against the first real readings (half a second), and
+//     SDL waits for the pedal's first reading near an end of its axis, and
 //     gas_rest / brake_rest in wheel.ini can give it by hand
+//   - menus and the pause screen: the hat moves, two buttons accept and go
+//     back, start resumes, the shift paddles change the settings tab
 //   - buttons: shift up / down (the paddles), VIEW CHANGE, hand brake, coin,
 //     start, and an H shifter's gears 1-4 when the wheel has one
 //   - force feedback (SDL haptic): the game's own motor force as a constant
@@ -19,6 +21,9 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <vector>
+
+enum class PadKey;   // gamepad.h
 
 struct WheelState {
     bool connected = false;
@@ -36,7 +41,7 @@ void wheels_init();                         // after SDL_Init: SDL_INIT_JOYSTICK
 void wheels_added(uint32_t joystick_id);    // SDL_EVENT_JOYSTICK_ADDED
 void wheels_removed(uint32_t joystick_id);  // SDL_EVENT_JOYSTICK_REMOVED
 bool wheel_is_ours(uint32_t joystick_id);   // a wheel: Gamepads leaves it alone even if SDL maps it as a gamepad
-void wheels_poll(bool focused);
+void wheels_poll(bool focused, bool menu, std::vector<PadKey>& keys);   // menu: PadKeys from the hat and buttons
 void wheels_shutdown();
 
 const WheelState& wheel_state();
