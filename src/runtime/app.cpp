@@ -1524,6 +1524,9 @@ int main(int argc, char** argv) {
                       latest ? latest->time : 0.0, int(take), int(shown != shown_before), scene_seconds * 1000,
                       tex_dirty_rows, f.fence * 1000, f.acquire * 1000, f.record * 1000, f.present * 1000,
                       (qpc_seconds() - loop_from) * 1000, lateness);
+            // (L: the loop's other parts for that image, as in out/slow.log, in ms)
+            frame_log("L %llu %.3f %.3f %.3f %.3f %.3f %.3f\n", (unsigned long long)f.present_id, parts.wait * 1000,
+                      parts.window * 1000, parts.menu * 1000, parts.input * 1000, parts.vibration * 1000, parts.textures * 1000);
             if (f.present_id) presented_id = f.present_id;
         }
         if (!film.empty() && film_presents >= 4) {   // next snapshot of the sequence
