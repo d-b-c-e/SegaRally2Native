@@ -490,7 +490,7 @@ std::vector<Frontend::Item> Frontend::items() const {
             L"Shadows from a shadow map and occlusion from the depth, as without ray tracing",
             L"Sun shadows traced through the world: every car and tree, soft with distance",
             L"Also the ambient occlusion: corners and the ground under things, even off screen"};
-        std::wstring pads = gamepads.empty() ? L"No gamepad connected" : L"Connected: " + gamepads;
+        std::wstring pads = gamepads.empty() ? L"No gamepad or wheel connected" : L"Connected: " + gamepads;
         std::vector<Item> all = {{OPT_DISPLAY, L"DISPLAY", settings.fullscreen ? L"FULLSCREEN" : L"WINDOW",
                  pad_prompts ? L"Window or full screen" : L"Window or full screen (also F11 or Alt+Enter)"},
                 {OPT_MOTION, L"MOTION", settings.smooth ? L"SMOOTH" : L"ORIGINAL",

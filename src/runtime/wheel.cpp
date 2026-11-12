@@ -247,8 +247,22 @@ void wheels_init() {
 
 bool wheel_is_ours(uint32_t id) { return g_wheel.joy && g_wheel.id == id; }
 
+// Every joystick SDL finds, wheel or not, so that a log tells why a wheel
+// was not taken (issue #33)
+static void log_joystick(uint32_t id) {
+    static const char* const TYPES[] = {"unknown", "gamepad", "wheel", "arcade stick", "flight stick",
+                                        "dance pad", "guitar", "drum kit", "arcade pad", "throttle"};
+    SDL_JoystickType t = SDL_GetJoystickTypeForID(id);
+    const char* name = SDL_GetJoystickNameForID(id);
+    printf("[joystick] %s (%04X:%04X, %s%s)\n", name ? name : "?", SDL_GetJoystickVendorForID(id),
+           SDL_GetJoystickProductForID(id), unsigned(t) < 10 ? TYPES[t] : "?",
+           SDL_IsGamepad(id) ? ", mapped as a gamepad" : "");
+}
+
 void wheels_added(uint32_t id) {
-    if (!g_ok || g_wheel.joy || !is_wheel(id)) return;
+    if (!g_ok) return;
+    log_joystick(id);
+    if (g_wheel.joy || !is_wheel(id)) return;
     SDL_Joystick* j = SDL_OpenJoystick(id);
     if (!j) return;
     int axes = SDL_GetNumJoystickAxes(j);
