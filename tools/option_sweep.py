@@ -17,7 +17,7 @@ VARIANTS = [
     ("nohdr", ["--no-hdr"]), ("noao", ["--no-ao"]),
     ("nobloom", ["--no-bloom"]),
     ("nosoft", ["--no-soft"]), ("nosharpen", ["--no-sharpen"]), ("nohaze", ["--no-haze"]),
-    ("classictext", ["--classic-text"]),
+    ("classichud", ["--classic-hud"]),
 ]
 
 

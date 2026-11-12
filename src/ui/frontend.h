@@ -43,7 +43,7 @@ struct FrontendSettings {
     int gi = 1;                // global illumination, the sun's light bounced off the world (ray tracing): 0 off, 1 low, 2 high
     bool dust = true;      // Sega Rally 2: dust and stones as particles (false: the game's own flat fans)
     bool sharpen = true;   // contrast adaptive sharpening
-    bool hd_text = true;
+    bool hd_hud = true;    // redrawn HUD and game screens (false: the ROM's own graphics)
     bool smooth = true;     // the 3D drawn between game frames at the monitor's refresh rate
     int saturation = 100;   // colour saturation in % (100 = original, the default)
     int gamma = 100;        // gamma x 100 (100 = original, higher = brighter)
@@ -130,7 +130,7 @@ private:
         RECORDS, MORE_GAMES, LOST_WORLD, STAR_WARS,   // LOST_WORLD + g: the games of MORE RECOMPS, in order
         COFFEE,   // MORE RECOMPS: the donation link
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
-        OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_TEXT,
+        OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
     };
     struct Item {

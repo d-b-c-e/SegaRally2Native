@@ -13,6 +13,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[8] 12 November 2026
+- New HD HUD option in SETTINGS > GRAPHICS: turn it off to race with the arcade's original pixel HUD and screens instead of the redrawn ones.
+
 [7] 12 November 2026
 - Menu music now plays through the game's own sound output: no more silent menus on some PCs.
 - Smoother picture: no more brief jump back when a frame arrives late, as when a stage starts.

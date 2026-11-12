@@ -218,7 +218,7 @@ void FrontendSettings::load(const char* path) {
         else if (k == "global_illumination") gi = v == "high" ? 2 : v == "off" || v == "0" ? 0 : 1;
         else if (k == "dust") dust = v != "original" && v != "0";
         else if (k == "sharpen") sharpen = on;
-        else if (k == "hd_text") hd_text = on;
+        else if (k == "hd_hud" || k == "hd_text") hd_hud = on;   // (hd_text: before the HUD's pictures joined it)
         else if (k == "motion") smooth = v != "original";
         else if (k == "saturation") saturation = std::clamp(atoi(value), 0, 200);
         else if (k == "gamma") gamma = std::clamp(int(atof(value) * 100 + 0.5), 50, 150);
@@ -238,11 +238,11 @@ std::string FrontendSettings::text() const {
     static const char* const BLOOM[4] = {"off", "low", "medium", "high"};   // also the vibration levels
     static const char* const SPEAKERS[3] = {"stereo", "surround", "headphones"};
     static const char* const RT_MODES[3] = {"off", "shadows", "ao"};
-    snprintf(buf, sizeof(buf), "fullscreen = %d\nvolume = %d\nmusic = %d\naa = %s\nhaze = %d\nbloom = %s\nao = %d\nsun = %d\nshadows = %d\nsoft_particles = %d\nhdr = %d\nsharpen = %d\nhd_text = %d\n"
+    snprintf(buf, sizeof(buf), "fullscreen = %d\nvolume = %d\nmusic = %d\naa = %s\nhaze = %d\nbloom = %s\nao = %d\nsun = %d\nshadows = %d\nsoft_particles = %d\nhdr = %d\nsharpen = %d\nhd_hud = %d\n"
                "saturation = %d\ngamma = %.2f\nmotion = %s\nspeakers = %s\nrear_boost = %d\nsample_interpolation = %s\n"
                "vibration = %s\nray_tracing = %s\n"
                "splash_screens = %d\nmenu_music = %d\n",
-            fullscreen, volume, music, AA[aa], haze, BLOOM[bloom], ao, sun, shadows, soft, hdr, sharpen, hd_text, saturation,
+            fullscreen, volume, music, AA[aa], haze, BLOOM[bloom], ao, sun, shadows, soft, hdr, sharpen, hd_hud, saturation,
             gamma / 100.0, smooth ? "smooth" : "original", SPEAKERS[speakers], rear_boost, cubic_samples ? "cubic" : "linear",
             BLOOM[vibration], RT_MODES[ray_tracing],
             splash, menu_music);
@@ -357,13 +357,13 @@ const wchar_t* const Frontend::TAB_NAMES[Frontend::TAB_COUNT] = {L"DISPLAY", L"G
 // Every settings option: its tab and, within the tab, the order shown. This is
 // the one place to put a new option (besides `all` in items()); an option
 // missing here is not shown. Left out in Sega Rally 2: SOFT PARTICLES
-// (only the spectators' camera flashes) and HD TEXT (always on).
+// (only the spectators' camera flashes).
 // Tabs past VISIBLE_OPTIONS rows scroll.
 const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_QUALITY, DISPLAY_TAB}, {OPT_DISPLAY, DISPLAY_TAB}, {OPT_MOTION, DISPLAY_TAB}, {OPT_AA, DISPLAY_TAB},
     {OPT_SAT, DISPLAY_TAB}, {OPT_GAMMA, DISPLAY_TAB}, {OPT_SHARPEN, DISPLAY_TAB}, {OPT_UPDATES, DISPLAY_TAB},
     {OPT_SUN, LIGHTING_TAB}, {OPT_SHADOWS, LIGHTING_TAB}, {OPT_RT, LIGHTING_TAB}, {OPT_REFLECT, LIGHTING_TAB}, {OPT_GI, LIGHTING_TAB}, {OPT_HDR, LIGHTING_TAB},
-    {OPT_AO, LIGHTING_TAB}, {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB}, {OPT_DUST, LIGHTING_TAB},
+    {OPT_AO, LIGHTING_TAB}, {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB}, {OPT_DUST, LIGHTING_TAB}, {OPT_HUD, LIGHTING_TAB},
     {OPT_VOLUME, AUDIO_TAB}, {OPT_MUSIC, AUDIO_TAB}, {OPT_SPEAKERS, AUDIO_TAB}, {OPT_REAR, AUDIO_TAB}, {OPT_SAMPLES, AUDIO_TAB}, {OPT_MENU_MUSIC, AUDIO_TAB},
     {OPT_VIBRATION, CONTROLS_TAB},
 };
@@ -528,8 +528,9 @@ std::vector<Frontend::Item> Frontend::items() const {
                  L"Brings back texture detail after the edge smoothing, without halos"},
                 {OPT_UPDATES, L"CHECK FOR UPDATES", on_off(settings.check_updates),
                  L"At launch, look on GitHub for a new version and show what is new in it"},
-                {OPT_TEXT, L"HD TEXT", on_off(settings.hd_text),
-                 L"Sharp fonts for menus, captions and times instead of the original pixels"},
+                {OPT_HUD, L"HD HUD", on_off(settings.hd_hud),
+                 settings.hd_hud ? L"Redrawn HUD: sharp fonts, rev counters, gear box and co-driver signs"
+                                 : L"The arcade's original pixel HUD and screens"},
                 {OPT_VIBRATION, L"VIBRATION", BLOOM_LEVELS[settings.vibration],
                  L"The gamepad rumbles with the steering wheel's force feedback: bumps, slides and crashes"}};
         std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? L"Left / Right here, or LB / RB, change the tab"
@@ -681,7 +682,7 @@ void Frontend::activate(const Item& it, int dir) {
     case OPT_GI: settings.gi = (settings.gi + dir + 3) % 3; push(Action::SettingsChanged); break;
     case OPT_DUST: settings.dust = !settings.dust; push(Action::SettingsChanged); break;
     case OPT_SHARPEN: settings.sharpen = !settings.sharpen; push(Action::SettingsChanged); break;
-    case OPT_TEXT: settings.hd_text = !settings.hd_text; push(Action::SettingsChanged); break;
+    case OPT_HUD: settings.hd_hud = !settings.hd_hud; push(Action::SettingsChanged); break;
     case OPT_MOTION: settings.smooth = !settings.smooth; push(Action::SettingsChanged); break;
     case OPT_VIBRATION: settings.vibration = (settings.vibration + dir + 4) % 4; push(Action::SettingsChanged); break;
     case OPT_SAT:   // 0..200 % in steps of 10; a click past the top starts again from the bottom
@@ -2010,6 +2011,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
     const Style dim{DIM, DIM, 0x080806, U(2), 0.9f};
 
     int y_items, spacing, item_px, hint_y, foot_y;
+    int hint_room = 0;   // room for a second hint line below hint_y (else it grows upwards)
     if (!over_game) {   // the options (or the records): a card over the blurred backdrop
         int top = U(70), bottom = h - U(70), half = U(580);
         fill(cx - half, top, cx + half, bottom, PANEL, 0.74f);
@@ -2027,7 +2029,8 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         int n = options ? VISIBLE_OPTIONS + 2 : int(list.size());   // same panel for every settings tab
         spacing = options ? U(56) : U(80);
         item_px = options ? U(44) : U(58);
-        int panel_h = U(170) + n * spacing + U(130);   // title, items, hint and key help
+        hint_room = U(34);   // BACK sits right above the hint: two lines grow down, not into it
+        int panel_h = U(170) + n * spacing + U(130) + hint_room;   // title, items, hint and key help
         int top = (h - panel_h) / 2;
         int half = options ? U(560) : U(460);
         fill(cx - half, top, cx + half, top + panel_h, PANEL, 0.92f);
@@ -2036,7 +2039,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         text(TITLE, U(110), options ? L"SETTINGS" : L"PAUSED", cx, top + U(22), 1,
              {GOLD_TOP, GOLD_BOTTOM, EDGE, U(5), 1, U(5)});
         y_items = top + U(170);
-        hint_y = top + panel_h - U(96);
+        hint_y = top + panel_h - U(96) - hint_room;
         foot_y = top + panel_h - U(46);
     }
     // Settings tabs show at most VISIBLE_OPTIONS rows; longer ones scroll (the
@@ -2158,7 +2161,8 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
     {   // wrapped to the card (two lines at most, the last one where a single line goes)
         auto lines = wrap(MONO, U(24), list[selected_].hint, U(980));
         if (lines.size() > 2) lines.resize(2);
-        int ly = hint_y - (int(lines.size()) - 1) * U(30);
+        int ly = lines.size() > 1 ? hint_y + hint_room - (int(lines.size()) - 1) * U(30)
+                                  : hint_y + hint_room / 2;   // one line: centred in the room
         for (const std::wstring& line : lines) {
             text(MONO, U(24), line, cx, ly, 1, {HINT, HINT});
             ly += U(34);
