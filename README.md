@@ -50,7 +50,7 @@ You need Windows 10/11 (64-bit) and a GPU with a Vulkan 1.3 driver (most from 20
 tracing needs an NVIDIA RTX or an AMD RX 6000 or newer; DLAA and DLSS, an NVIDIA RTX. On other
 cards those options switch themselves off, and the game builds the same on any GPU.
 
-The easy way is **[NicoLauncher](https://github.com/snicolast/NicoLauncher-Hub)**, a free app that
+Install it with **[NicoLauncher](https://github.com/snicolast/NicoLauncher-Hub)**, a free app that
 downloads, builds, updates and starts the game for you. No Visual Studio, nothing to set up by hand.
 
 1. Download **[NicoLauncher-setup.exe](https://github.com/snicolast/NicoLauncher-Hub/releases/latest)** and run it.
