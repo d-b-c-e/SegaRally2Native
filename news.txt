@@ -13,6 +13,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[12] 13 November 2026
+- Intel graphics (UHD, Iris): the game should now start instead of stopping with "Could not start the 3D renderer".
+
 [11] 13 November 2026
 - Steering wheels: Fanatec and other DirectInput wheels should now be detected, with force feedback, and the wheel is listed under SETTINGS > CONTROLS.
 

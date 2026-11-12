@@ -374,7 +374,9 @@ int main(int argc, char** argv) {
     R3DRenderer renderer;
     if (!renderer.init(presenter, g_opt.supersample, g_opt.msaa, g_opt.aniso, g_opt.dlaa, g_opt.dlss)) {
         fprintf(stderr, "Could not start the 3D renderer\n");
-        MessageBoxA(nullptr, "Could not start the 3D renderer. Update the graphics driver.",
+        MessageBoxA(nullptr,
+                    "Could not start the 3D renderer: the graphics card or its driver lacks something the game needs. "
+                    "Run SegaRally2.exe from a command prompt to see the details.",
                     "Sega Rally 2 Native", MB_OK | MB_ICONERROR);
         return 1;
     }
@@ -413,6 +415,7 @@ int main(int argc, char** argv) {
     // (save/clean_textures: the originals of the replaced textures, seen once and kept, so a car's livery
     // is recognised with the mud or snow the game blends into it; texture_pack.h)
     pack.init("textures", g_opt.dump_textures ? "out/textures" : "", "save/clean_textures");
+    pack.set_max_slots(renderer.texture_slots());
     builder.set_texture_pack(&pack, &g_texture_ram);
     // 2D replacements: the foreground (GPU slots 1-27) and the layers below the
     // 3D image (28-55; the backdrops of SkyPack use 56-63)
