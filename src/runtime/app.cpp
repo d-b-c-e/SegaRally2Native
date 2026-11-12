@@ -36,6 +36,7 @@
 #include "rom_zip.h"
 #include "runtime.h"
 #include "stats.h"
+#include "wheel.h"
 #include "../audio/sound_board.h"
 #include "../ui/achievement_toast.h"
 #include "../ui/frontend.h"
@@ -1116,13 +1117,19 @@ int main(int argc, char** argv) {
         }
         poll_keyboard(presenter.hwnd());
         bool pad_pause = poll_gamepads(presenter.hwnd());
-        if (g_pads.changed()) {   // the CONTROLS tab names the pads
+        static std::string shown_wheel;   // the wheel the CONTROLS tab names ("" = none)
+        const WheelState& wheel = wheel_state();
+        std::string wheel_name = wheel.connected ? wheel.name : std::string();
+        if (g_pads.changed() || wheel_name != shown_wheel) {   // the CONTROLS tab names the pads and the wheel
+            shown_wheel = wheel_name;
             std::wstring names;
             for (int i = 0; i < Gamepads::MAX; i++) {
                 const PadState& pad = g_pads.pad(i);
                 if (!pad.connected) continue;
                 names += (names.empty() ? L"" : L", ") + std::wstring(pad.name.begin(), pad.name.end());
             }
+            if (!wheel_name.empty())
+                names += (names.empty() ? L"" : L", ") + std::wstring(wheel_name.begin(), wheel_name.end());
             frontend.gamepads = names;
             frontend.invalidate();
         }
