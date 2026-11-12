@@ -13,8 +13,12 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
-[8] 12 November 2026
+[9] 12 November 2026
 - New HD HUD option in SETTINGS > GRAPHICS: turn it off to race with the arcade's original pixel HUD and screens instead of the redrawn ones.
+
+[8] 12 November 2026
+- NicoLauncher is out: one free app that installs, builds, updates and starts this game and the other recomps. No Visual Studio needed
+- Get it at github.com/snicolast/NicoLauncher-Hub. Your current install keeps working, and the launcher can use the folder you already have
 
 [7] 12 November 2026
 - Menu music now plays through the game's own sound output: no more silent menus on some PCs.

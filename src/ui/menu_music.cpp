@@ -107,20 +107,25 @@ bool MenuMusic::load(const char* path) {
 }
 
 bool MenuMusic::open() {
+    if (loader_.joinable() || ready_) return true;
     for (const char* path : {"third_party/menu/music.mp3", "third_party/menu/music.wav", g_menu_music_path.c_str()}) {
         FILE* f = fopen(path, "rb");
         if (!f) continue;
         fclose(f);
-        if (load(path)) {
-            printf("[menu] music %s (%.0f s at %d Hz)\n", path, double(length()) / rate_, rate_);
-            return true;
-        }
-        fprintf(stderr, "[menu] could not read the music %s: it is not a 16-bit WAV or an MP3\n", path);
+        path_ = path;
+        loader_ = std::thread([this] {
+            if (load(path_.c_str())) printf("[menu] music %s (%.0f s at %d Hz)\n", path_.c_str(), double(length()) / rate_, rate_);
+            else fprintf(stderr, "[menu] could not read the music %s: it is not a 16-bit WAV or an MP3\n", path_.c_str());
+        });
+        return true;
     }
     return false;
 }
 
-void MenuMusic::close() { want_ = false; }
+void MenuMusic::close() {
+    want_ = false;
+    if (loader_.joinable()) loader_.join();
+}
 
 void MenuMusic::update(bool want, int volume, double) {
     // A square-root curve so it sits a little louder in the middle: the game's
