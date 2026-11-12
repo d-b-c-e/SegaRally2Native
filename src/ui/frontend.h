@@ -31,6 +31,7 @@ struct FrontendSettings {
     int rear_boost = 6;  // dB on the rear pair: 0, 3, 6, 9, 12
     bool cubic_samples = true;   // smooth (cubic) sample interpolation instead of the original linear one
     int aa = 0;        // 0 MSAA, 1 DLAA, 2 off, 3 DLSS quality (takes effect on the next launch)
+    bool aa_saved = false;   // load() found it in the file (not there on the first run: chosen then for the GPU and the screen, app.cpp)
     bool haze = true;  // distance haze
     int bloom = 2;     // glow around bright things: 0 off, 1 low, 2 medium, 3 high
     bool ao = true;    // ambient occlusion
