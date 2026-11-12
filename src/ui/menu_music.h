@@ -2,20 +2,23 @@
 // is one, else a tune of the game (g_menu_music_path, decoded from the music
 // board's ROM at launch: Dsb2::extract_track), looped while a menu is up over the backdrop (not over a paused
 // game) and faded out when the game starts.
-// The file is decoded into memory once and mixed into the game's own audio
-// output (AudioOut calls mix()), so it plays wherever the game has sound and
-// needs nothing from Windows. Portable C++: tests/menu_music_test.cpp.
+// The file is decoded into memory once, on a thread of its own so the game
+// does not wait for it, and mixed into the game's own audio output (AudioOut
+// calls mix()): it plays wherever the game has sound and needs nothing from
+// Windows. Portable C++: tests/menu_music_test.cpp.
 #pragma once
 #include <atomic>
 #include <cstddef>
 #include <string>
+#include <thread>
 #include <vector>
 
 extern std::string g_menu_music_path;   // set by app.cpp before the menu opens
 
 class MenuMusic {
 public:
-    bool open();    // false: there is no music file
+    ~MenuMusic() { close(); }
+    bool open();    // false: there is no music file. The file is read in the background
     // One file: 16-bit PCM WAV or MP3, by its content. False if it is neither
     bool load(const char* path);
     void close();
@@ -32,6 +35,9 @@ public:
     size_t length() const { return pcm_.size() / 2; }   // frames
 
 private:
+    std::thread loader_;
+    std::string path_;
+
     // Written before ready_ is set, only read afterwards
     std::vector<float> pcm_;   // stereo, full scale = 1
     int rate_ = 0;
