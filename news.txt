@@ -13,6 +13,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[10] 13 November 2026
+- New DIFFICULTY option in the new SETTINGS > GAME tab: from VERY EASY to VERY HARD, the arcade's own setting for the time you get at the start and at each checkpoint.
+
 [9] 12 November 2026
 - New HD HUD option in SETTINGS > GRAPHICS: turn it off to race with the arcade's original pixel HUD and screens instead of the redrawn ones.
 

@@ -1022,6 +1022,7 @@ int main(int argc, char** argv) {
                         g_opt.classic_hud = !s.hd_hud;
                         shown = ~0ull;   // compose the 2D layer again even while the game stands still
                     }
+                    g_opt.difficulty = s.difficulty;   // the game thread puts it in the operator settings
                     if (g_opt.interp != s.smooth) {
                         g_opt.interp = s.smooth;
                         renderer.set_interpolation(1.0f);   // the latest game frame as it is
