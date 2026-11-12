@@ -1,5 +1,7 @@
 #include "wheel.h"
 
+#include "gamepad.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -224,14 +226,18 @@ void apply_force(Wheel& w) {
             e.constant.direction.dir[0] = 1;
             e.constant.length = SDL_HAPTIC_INFINITY;
             e.constant.level = level;
+            Uint64 from = SDL_GetTicksNS();
             SDL_UpdateHapticEffect(w.haptic, w.constant, &e);
+            g_vibration_seconds += double(SDL_GetTicksNS() - from) * 1e-9;
             w.level = level;
         }
     }
     float shake = g_shake.exchange(0.0f);
     if (w.rumble && g_focused && shake > 0.08f) {
         uint16_t m = uint16_t(std::min(1.0f, shake * g_cfg.ffb_strength) * 0xFFFF);
+        Uint64 from = SDL_GetTicksNS();
         SDL_RumbleJoystick(w.joy, m, m / 2, 60);
+        g_vibration_seconds += double(SDL_GetTicksNS() - from) * 1e-9;
     }
 }
 
