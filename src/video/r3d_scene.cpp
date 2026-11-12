@@ -156,7 +156,9 @@ void R3DSceneBuilder::build(const R3DFrameState& state, R3DScene& out) {
         if (v.world) world_vp = &v;
     for (const R3DViewport& v : out.viewports) {
         if (v.world || v.x > 0.5f || v.w < 495.5f || v.opaque_count < 200 || v.sun_intensity <= 0) continue;
-        if (world_vp && v.priority != world_vp->priority) continue;
+        // Without a world viewport (menus: the course select's 3D frames round
+        // the pictures) there is no car to light
+        if (!world_vp || v.priority != world_vp->priority) continue;
         for (uint32_t i = v.opaque_first; i < v.opaque_first + v.opaque_count; i++) out.vertices[i].flags |= R3D_CAR;
         for (uint32_t i = v.trans_first; i < v.trans_first + v.trans_count; i++) out.vertices[i].flags |= R3D_CAR;
     }
