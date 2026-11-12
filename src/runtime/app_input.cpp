@@ -11,6 +11,7 @@
 #include "inputs.h"
 #include "runtime.h"
 #include "wheel.h"
+#include "wheelkit_host.h"
 
 bool g_menu_open = false;   // a menu has the controls
 Gamepads g_pads;
@@ -79,6 +80,7 @@ void poll_keyboard(HWND hwnd) {
 bool poll_gamepads(HWND hwnd) {
     bool focused = GetForegroundWindow() == hwnd;
     g_pads.poll(g_pad_rumble, focused, g_menu_open);
+    bool wheel_pause = wheelkit_controls(g_inputs, focused && !g_menu_open && g_auto.events.empty());
     if (!focused || g_menu_open || !g_auto.events.empty()) return false;
     Inputs& in = g_inputs;
     auto keyboard_steer = [&] { return (float(in.steer) - 128.0f) / 127.0f; };
@@ -94,7 +96,7 @@ bool poll_gamepads(HWND hwnd) {
         if (w.coin) press_coin();
         if (w.start) press_start();
     }
-    bool pause = false, driver = true;   // the first connected pad is the driver's
+    bool pause = wheel_pause, driver = true;   // the first connected pad is the driver's
     for (int i = 0; i < Gamepads::MAX; i++) {
         const PadState& pad = g_pads.pad(i);
         if (!pad.connected) continue;

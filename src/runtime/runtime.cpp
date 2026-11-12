@@ -26,6 +26,7 @@
 #include "fns.h"
 #include "runtime.h"
 #include "drive_board.h"
+#include "wheelkit_host.h"
 #include "jtag.h"
 #include "scsi53c810.h"
 #include "../video/tilegen.h"
@@ -1222,6 +1223,7 @@ static void ffb_frame() {
     static float force = 0;
     force += 0.5f * ((float(m[0]) - 128.0f) / 128.0f - force);
     wheel_set_force(std::clamp(force, -1.0f, 1.0f), shake);
+    wheelkit_game_frame(m[0], g_drive.motor_control());
 }
 
 void rt_event(Ctx& c) {

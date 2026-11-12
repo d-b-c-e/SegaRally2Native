@@ -1,6 +1,7 @@
 #include "gamepad.h"
 
 #include "wheel.h"
+#include "wheelkit_host.h"
 
 #include <algorithm>
 #include <cmath>
@@ -30,7 +31,7 @@ bool Gamepads::init() {
         return false;
     }
     ok_ = true;
-    wheels_init();   // steering wheels and other joysticks that are not gamepads (wheel.cpp)
+    if (!wheelkit_on()) wheels_init();   // steering wheels and other joysticks that are not gamepads (wheel.cpp)
     return true;   // the pads already plugged in arrive as SDL_EVENT_GAMEPAD_ADDED
 }
 

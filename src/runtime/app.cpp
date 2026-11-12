@@ -37,6 +37,7 @@
 #include "runtime.h"
 #include "stats.h"
 #include "wheel.h"
+#include "wheelkit_host.h"
 #include "../audio/sound_board.h"
 #include "../ui/achievement_toast.h"
 #include "../ui/frontend.h"
@@ -369,6 +370,7 @@ int main(int argc, char** argv) {
     // runs too (--auto, --headless, SR2_POKE...); give them a save folder of their own
     static const bool stats_test = getenv("SR2_STATS_TEST") != nullptr;
     if (stats_test && g_opt.replay.empty()) stats_init();
+    if (g_opt.replay.empty()) wheelkit_start();   // Wheelkit (wheelkit_host.h): before the SDL wheels
 
     // The game code uses the original CPU's stack as memory and nests
     // many calls: run it on a thread with 512 MB of native stack.
@@ -389,6 +391,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     printf("GPU: %s\n", presenter.device_name().c_str());
+    wheelkit_window(presenter.hwnd());
     if (aa_auto) g_opt.dlss = screen_height(presenter.hwnd()) > 1440;
     g_pads.init();
     timeBeginPeriod(1);
@@ -1241,6 +1244,8 @@ int main(int argc, char** argv) {
                 pad_in_menu = true;
             }
         }
+        for (int vk; (vk = wheelkit_menu_key()) != 0;)   // the wheel's buttons in the menus
+            if (frontend.active()) frontend.key(vk);
         if (pad_pause && g_opt.menu && !frontend.active()) {
             frontend.open(Frontend::Screen::Pause);
             pad_in_menu = true;
@@ -1664,6 +1669,7 @@ int main(int argc, char** argv) {
     renderer.shutdown();
     presenter.shutdown();
     g_pads.shutdown();
+    wheelkit_stop();
     console_prompt();
     ExitProcess(0);
 }
