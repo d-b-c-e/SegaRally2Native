@@ -13,6 +13,10 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[8] 12 November 2026
+- NicoLauncher is out: one free app that installs, builds, updates and starts this game and the other recomps. No Visual Studio needed
+- Get it at github.com/snicolast/NicoLauncher-Hub. Your current install keeps working, and the launcher can use the folder you already have
+
 [7] 12 November 2026
 - Menu music now plays through the game's own sound output: no more silent menus on some PCs.
 - Smoother picture: no more brief jump back when a frame arrives late, as when a stage starts.
