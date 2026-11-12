@@ -185,6 +185,49 @@ record" without it: rankingRank 0x22D608 >= 0 read once the phase leaves 1
 after a finished game (it is -1 after a time up), or a change in the
 0x4B2210 table.
 
+## Operator settings (EEPROM copy) and difficulty
+
+The game keeps the whole 93C46 EEPROM (64 words) in RAM at 0x4A9D00. The
+operator's GAME ASSIGNMENTS are one word at **0x4A9D18**:
+
+| Bits (mask) | Field |
+|---|---|
+| 0x80000000 | ADVERTISE |
+| (w >> 26) & 3 | CABINET |
+| (w >> 22) & 0xF | LINK TYPE |
+| **0x00380000** ((w >> 19) & 7) | **DIFFICULTY**: 0 NORMAL, 1 HARD, 2 VERY HARD, 3 VERY EASY, 4 EASY |
+| 0x00040000 | DEFAULT VIEW |
+| 0x00002000 | SPEED MPH / KMH |
+| 0x00000100 | DISPLAY URL |
+| 0x00000020 | GAME MODE |
+| 0x00000010 | COCKPIT REACTION |
+
+At each new game (code at 0x2CC2C) the difficulty is copied into 0x22CF18
+(game structure +0x04). Race set-up, fn_0004041C, picks with it a row of
+the time table (pointer per mode at 0xE8348: championship 0xE58C8, practice
+0xE62C8): the start time and then each checkpoint's extension, in frames,
+-1 ending the list. Championship rows are 0x80 bytes, one per difficulty in
+the game's numbering, with 16 bytes per course id. Only the time limits
+change, not the rivals. Seconds (read from the ROM; start, checkpoints):
+
+| Difficulty | Desert | Mountain | Snowy | Riviera |
+|---|---|---|---|---|
+| NORMAL | 50, 30 | 30, 27 | 30, 26 | 38, 34 |
+| HARD | 50, **28** | 30, 27 | 30, 26 | 38, 34 |
+| VERY HARD | 50, **26** | 30, 27 | 30, 26 | 38, 34 |
+| VERY EASY | 50, 30 | **32, 29** | **32, 28** | 38, 34 |
+| EASY | 50, 30 | **32**, 27 | **32**, 26 | 38, 34 |
+
+Confirmed in headless runs (`--difficulty X`, checkpoint forced with
+`SR2_POKE=22CFBC=110@5000-5001`): 0x22CF18 follows the option (3, 4, 0, 1,
+2), the Desert championship starts with 3000 frames (50 s) at every
+difficulty, and its first checkpoint adds 1800 frames (30 s) on NORMAL,
+EASY and VERY EASY, 1680 (28 s) on HARD and 1560 (26 s) on VERY HARD.
+
+The DIFFICULTY option (OPTIONS > GAME, `--difficulty`) rewrites these three
+bits of the RAM copy every frame when they differ (runtime.cpp); the EEPROM
+itself (save/eeprom.bin) keeps the operator's setting.
+
 ## Other fields seen (not needed so far)
 
 | Address | What it is |
