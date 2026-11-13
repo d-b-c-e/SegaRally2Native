@@ -166,6 +166,13 @@ int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7]
     wk_triple_views tv{};
     tv.size = sizeof tv;
     if (!p_wk_triples_views(c, &tv)) return 0;
+    static int logged = 0;
+    if (g_racing && logged++ == 0) {   // once: the game's projection and the side screens' (the seams' checks read it)
+        char line[300];
+        snprintf(line, sizeof line, "sega-rally-2: three views from the game's projection %.4f %.4f %.4f %.4f widen %.3f; left %.4f %.4f %.4f, right %.4f %.4f %.4f",
+                 p[0], p[5], p[8], p[9], widen, tv.projection[0][0], tv.projection[0][8], tv.rotation[0][2], tv.projection[2][0], tv.projection[2][8], tv.rotation[2][2]);
+        p_wk_log(line);
+    }
     const int count = g_racing ? 3 : 1;   // 1: the centre screen alone (views[1]), the sides black
     for (int s = 0; s < 3; s++) {
         double m[16];
