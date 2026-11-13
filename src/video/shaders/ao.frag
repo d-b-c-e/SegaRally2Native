@@ -130,9 +130,18 @@ void main() {
     float noise = fract(52.9829189 * fract(dot(frag, vec2(0.06711056, 0.00583715))) + ao.misc.x);
     // Fogged surfaces lose their shading, so they lose the occlusion too
     float fog = clamp(ao.params.w + (-p.z) * ao.params.z, 0.0, 1.0);
+#ifdef RAY_TRACING
+    // Wheelkit (a modified version's addition): a side screen's view space turned back into the centre's,
+    // where the traced world is (light.yzw: a yaw's cos, sin and -sin; all 0 on the centre screen)
+    vec3 pr = p, nr = n;
+    if (ao.light.y != 0.0 || ao.light.z != 0.0) {
+        pr = vec3(ao.light.y * p.x + ao.light.z * p.z, p.y, ao.light.w * p.x + ao.light.y * p.z);
+        nr = vec3(ao.light.y * n.x + ao.light.z * n.z, n.y, ao.light.w * n.x + ao.light.y * n.z);
+    }
+#endif
     vec3 bounce = vec3(0.0);
 #ifdef RAY_TRACING
-    if (ao.gi.y > 0.0) bounce = traced_bounce(p, n) * (1.0 - fog);
+    if (ao.gi.y > 0.0) bounce = traced_bounce(pr, nr) * (1.0 - fog);
     // misc.w 1: traced on the left half only, for comparing (LW_RTSPLIT)
     if (ao.misc.z > 0.0 && (ao.misc.w == 0.0 || frag.x < ao.rect.x + ao.rect.z * 0.5)) {
         // The same spread of rays for every pixel and every image: turned per
@@ -140,7 +149,7 @@ void main() {
         // fine pattern of dots fixed to the screen; turned per image (for DLAA
         // to average), the darkening in corners (the foot of the roadside
         // boards) changed from image to image and flickered
-        vec4 traced = traced_open(p, n, 0.0);
+        vec4 traced = traced_open(pr, nr, 0.0);
         float open = mix(1.0, traced.a, 1.0 - fog);
         // Global illumination: what hides the sky from a corner is itself
         // lit, and throws some of its light into it: the shading takes the

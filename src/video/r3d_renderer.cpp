@@ -1142,10 +1142,20 @@ void R3DRenderer::update_atmosphere(const ScreenLayout& lay, uint32_t target_w, 
             for (float& v : X) v /= xl;
             cross(L, X, Y);
             float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+            // Wheelkit (a modified version's addition): with three views the map covers all three screens' frustums
+            float three[3][16], per[3][7];
+            const bool tri = wheelkit_views(w->proj, float(target_w) / 3.0f / float(target_h) * SCREEN_H / SCREEN_W, three, per) == 3;
+            for (int s = 0; s < (tri ? 3 : 1); s++)
             for (float z : {1.0f, SHADOW_RANGE})
                 for (float nx : {-1.0f, 1.0f})
                     for (float ny : {-1.0f, 1.0f}) {
                         float p[3] = {z * (nx + u.view[2]) / u.view[0], z * (ny + u.view[3]) / u.view[1], -z};
+                        if (tri) {
+                            const float* q = per[s];
+                            float px = z * (nx + q[2]) / q[0], py = z * (ny + q[3]) / q[1];
+                            bool turn = q[4] != 0 || q[5] != 0;
+                            p[0] = turn ? q[4] * px + q[5] * -z : px, p[1] = py, p[2] = turn ? q[6] * px + q[4] * -z : -z;
+                        }
                         float l[3] = {p[0] * X[0] + p[1] * X[1] + p[2] * X[2], p[0] * Y[0] + p[1] * Y[1] + p[2] * Y[2],
                                       p[0] * L[0] + p[1] * L[1] + p[2] * L[2]};
                         for (int i = 0; i < 3; i++) lo[i] = std::min(lo[i], l[i]), hi[i] = std::max(hi[i], l[i]);
@@ -1719,6 +1729,7 @@ void R3DRenderer::record_world_depth(const Frame& f, const R3DViewport& w, bool 
                     alpha_seed, 0.12f * float(out_h), rt_ao_ ? ao_rays : 0.0f, rt_split ? 1.0f : 0.0f,
                     rt_gi_ ? gi.strength : 0.0f, rt_gi_ ? gi.rays : 0.0f, gi.reach, gi_turn(),
                     w.ambient * light_gain_, 0.0f, 0.0f, 0.0f};
+    int screen = -1;   // Wheelkit (a modified version's addition): the occlusion screen by screen with three views
     auto fullscreen = [&](VkPipeline pipe, Image& target, VkImageView view, uint32_t tw, uint32_t th) {
         VkRenderingAttachmentInfo at{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
         at.imageView = view;
@@ -1739,6 +1750,7 @@ void R3DRenderer::record_world_depth(const Frame& f, const R3DViewport& w, bool 
         VkViewport fv{0, 0, float(tw), float(th), 0, 1};
         vkCmdSetViewport(cmd, 0, 1, &fv);
         VkRect2D fr{{0, 0}, {tw, th}};
+        if (screen >= 0) fr.offset.x = int32_t(uint32_t(screen) * tw / 3), fr.extent.width = tw / 3;   // Wheelkit: one screen
         vkCmdSetScissor(cmd, 0, 1, &fr);
         vkCmdPushConstants(cmd, ao_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(ap), ap);
         vkCmdDraw(cmd, 3, 1, 0, 0);
@@ -1746,7 +1758,17 @@ void R3DRenderer::record_world_depth(const Frame& f, const R3DViewport& w, bool 
     };
     ao_.layout = VK_IMAGE_LAYOUT_UNDEFINED;   // fully rewritten
     transition(cmd, ao_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    fullscreen(ao_pass_, ao_, ao_.view, (out_w + 1) / 2, (out_h + 1) / 2);
+    float three[3][16], per[3][7];
+    if (full && wheelkit_views(w.proj, float(out_w) / 3.0f / float(out_h) * SCREEN_H / SCREEN_W, three, per) == 3) {
+        for (screen = 0; screen < 3; screen++) {
+            for (int i = 0; i < 4; i++) ap[i] = per[screen][i];
+            ap[4] = float(screen) * float(out_w) / 3.0f + jitter_x, ap[6] = float(out_w) / 3.0f;
+            ap[21] = per[screen][4], ap[22] = per[screen][5], ap[23] = per[screen][6];
+                fullscreen(ao_pass_, ao_, ao_.view, (out_w + 1) / 2, (out_h + 1) / 2);
+        }
+        screen = -1;
+    } else
+        fullscreen(ao_pass_, ao_, ao_.view, (out_w + 1) / 2, (out_h + 1) / 2);
     transition(cmd, ao_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     // Multiplied into the colour as drawn so far (the opaque world)
     Image& ctarget = msaa ? color_ms_ : color_;

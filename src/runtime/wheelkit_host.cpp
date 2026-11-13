@@ -158,7 +158,7 @@ void wheelkit_window(void* hwnd) {
 // (column-major, Vulkan clip: y down, depth near / -z) and the widening that makes it fill one screen. The runtime's
 // views take a centred Direct3D right-handed projection, row-vector and row-major: the same 16 numbers as a
 // column-major one acting on columns, so rotation x projection there is this matrix here
-int wheelkit_views(const float* p, float widen, float out[3][16]) {
+int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7]) {
     if (!g_three) return 0;
     const double n = 0.1, f = 10000.0;
     double c[16] = {};
@@ -175,11 +175,17 @@ int wheelkit_views(const float* p, float widen, float out[3][16]) {
                 for (int j = 0; j < 4; j++) m[r * 4 + k] += tv.rotation[s][r * 4 + j] * tv.projection[s][j * 4 + k];
             }
         for (int r = 0; r < 4; r++) {   // row k of the clip position is m[r * 4 + k] over r
-            out[s][r * 4 + 0] = float(m[r * 4 + 0] - p[8] * m[r * 4 + 3]);    // the game's own shear, as at the centre
+            out[s][r * 4 + 0] = float(m[r * 4 + 0] - p[8] / widen * m[r * 4 + 3]);   // the game's own shear, as at the centre
             out[s][r * 4 + 1] = float(-m[r * 4 + 1] - p[9] * m[r * 4 + 3]);   // y down
             out[s][r * 4 + 2] = r == 3 ? p[14] : 0.0f;                        // depth: near / -z, as the game's
             out[s][r * 4 + 3] = float(m[r * 4 + 3]);
         }
+        if (!ao) continue;   // the screen's own projection (x and y scale and offset) and the yaw back to the centre's view
+        const double* q = tv.projection[s];
+        const double* rot = tv.rotation[s];
+        float a[7] = {float(q[0]), float(-q[5]), float(q[8] + p[8] / widen), float(-q[9] + p[9]), float(rot[0]), float(rot[2]), float(rot[8])};
+        if (s == 1) a[4] = a[5] = a[6] = 0;   // the centre: no turn
+        for (int i = 0; i < 7; i++) ao[s][i] = a[i];
     }
     return count;
 }

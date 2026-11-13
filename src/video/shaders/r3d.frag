@@ -438,7 +438,9 @@ void main() {
         if (atm.soft.x > 0.0) {   // soft where it meets the road and what stands behind, over its size
             float d = texelFetch(scene_depth, ivec2(gl_FragCoord.xy), 0).r;
             float soft = puff ? clamp(params.z * 0.6, 0.15, 1.0) : 0.05;
-            if (d > 0.0) fade *= clamp((view_pos.z + 1e-3 / d) / soft, 0.0, 1.0);
+            // (Wheelkit, a modified version's addition: the depths compared in the screen's own view, as drawn,
+            // so a side screen of three views compares like with like)
+            if (d > 0.0) fade *= clamp((-1e-3 / gl_FragCoord.z + 1e-3 / d) / soft, 0.0, 1.0);
         }
         // Where it will not show whatever its pattern is (in the eye's face, at
         // the road, its faded last moments), the pattern is not worked out:
@@ -711,7 +713,7 @@ void main() {
     // (settle_player_car), and faded over 2 m it was gone
     if (vp.quality.x < 0.0 && atm.soft.x > 0.0 && (flags & (WORLD | TEXTURED)) == (WORLD | TEXTURED)) {
         float d = texelFetch(scene_depth, ivec2(gl_FragCoord.xy), 0).r;
-        if (d > 0.0) c.a *= clamp((view_pos.z + 1e-3 / d) / atm.soft.y, 0.0, 1.0);
+        if (d > 0.0) c.a *= clamp((-1e-3 / gl_FragCoord.z + 1e-3 / d) / atm.soft.y, 0.0, 1.0);   // Wheelkit: as drawn (three views)
     }
     out_color = c;
     // Bloom source: fire, explosions and lights are drawn unlit (luminous);
