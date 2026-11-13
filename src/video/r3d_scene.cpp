@@ -363,9 +363,14 @@ void R3DSceneBuilder::settle_player_car(R3DScene& out) {
     for (uint32_t i = car->opaque_first; i < car->opaque_first + car->opaque_count && i < vs.size(); i++) lower(vs[i], down);
     for (uint32_t i = car->trans_first; i < car->trans_first + car->trans_count && i < vs.size(); i++) lower(vs[i], down);
     for (uint32_t i = car->back_first; i < car->back_first + car->back_count && i < out.backs.size(); i++) lower(out.backs[i], down);
-    // The patch: 3 cm clear of the road (on it, the two would flicker through each other)
+    // The patch: 3 cm clear of the road (on it, the two would flicker through
+    // each other), and never lower than this frame's measure puts it: the lift
+    // is held while the measure jumps, and something else may have set the
+    // patch down already (at the desert's start a held lift pushed it under
+    // the road for half a second)
+    float patch_down = measured ? std::min(down, raw) : down;
     for (uint32_t k : patches) {
-        if (down > 0.03f) lower(vs[k], down - 0.03f);
+        if (patch_down > 0.03f) lower(vs[k], patch_down - 0.03f);
         set_down.insert(k);
     }
     };
