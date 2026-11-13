@@ -22,7 +22,7 @@ WK_FUNCTIONS(X)
 
 constexpr const char* VERSION = "0.4.1-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
-// Its direction and this size are not judged on a wheel yet: force feedback starts off (F6 > Force feedback)
+// Its sign is checked in an injected race (the force asked pulls toward the centre); the feel is the owner's to judge
 constexpr float FORCE_SCALE = 0.4f;
 bool g_on = false, g_panel = false, g_attached = false;
 int g_keys[16], g_key_count = 0;   // window thread only
@@ -39,7 +39,7 @@ constexpr uint32_t SPEED = 0x22F3A8, HUD_GEAR = 0x13AB80, HUD_LAP = 0x13AB94, HU
 constexpr char PAGES[] = R"({"settings":{"product":"SEGA Rally 2","version":"%s","keys":"F6 settings, F8 force feedback off","pages":{
 "controls":[{"id":"controls.profile","kind":"status","label":"Wheel profile","text":"No wheel set up"}],
 "ffb":[{"id":"ffb.status","kind":"status","text":"Off"},
-{"id":"ffb.enabled","kind":"toggle","label":"Force feedback","default":false,"help":"The arcade cabinet's own force. F8 turns it off."},
+{"id":"ffb.enabled","kind":"toggle","label":"Force feedback","default":true,"help":"The arcade cabinet's own force. F8 turns it off."},
 {"id":"ffb.steering","kind":"percent","label":"Steering strength","default":50,"help":"50%% is the tuned strength; 100%% doubles it."}],
 "display":[{"id":"display.status","kind":"status","label":"Now","text":"One screen"}],
 "help":[{"id":"help.runtime","kind":"status","label":"Wheelkit runtime","text":"not loaded"}]}}})";
@@ -190,12 +190,14 @@ bool wheelkit_controls(Inputs& in, bool driving) {
     }
     if (pressed(WK_ACTION_SELECT)) press_coin();
     if (pressed(WK_ACTION_START)) press_start();
-    static bool reached = false;
-    bool moved = s.steer != 0 || s.throttle > 0 || s.brake > 0;
-    if (!reached && (moved || pressed(WK_ACTION_SELECT) || pressed(WK_ACTION_START))) {
-        reached = true;
-        p_wk_log(moved ? "sega-rally-2: the profile's input reached the cabinet's controls (wheel or pedals)"
-                       : "sega-rally-2: the profile's input reached the cabinet's controls (coin or start)");
+    static bool moved = false, coined = false;
+    if (!moved && (s.steer != 0 || s.throttle > 0 || s.brake > 0)) {
+        moved = true;
+        p_wk_log("sega-rally-2: the profile's input reached the cabinet's controls (wheel or pedals)");
+    }
+    if (!coined && (pressed(WK_ACTION_SELECT) || pressed(WK_ACTION_START))) {
+        coined = true;
+        p_wk_log("sega-rally-2: the profile's input reached the cabinet's controls (coin or start)");
     }
     return pressed(WK_ACTION_BACK);
 }
@@ -261,9 +263,9 @@ void wheelkit_game_frame() {
     }
     if (car.race_on && race_frames++ % 60 == 0 && race_frames < 60 * 120) {
         snprintf(line, sizeof line, "sega-rally-2: telemetry in a race: %.1f m/s, gear %d, lap %d, position %d, %.2f s; "
-                 "cabinet steer %d accel %d brake %d lever %d",
+                 "cabinet steer %d accel %d brake %d lever %d; force asked %.3f",
                  car.speed, car.gear, car.lap, car.race_position, car.race_time, int(g_inputs.steer), int(g_inputs.accel),
-                 int(g_inputs.brake), int(g_inputs.gear));
+                 int(g_inputs.brake), int(g_inputs.gear), force);
         p_wk_log(line);
     }
 }
