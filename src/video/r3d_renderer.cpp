@@ -1586,6 +1586,7 @@ void R3DRenderer::record_world(const Frame& f) {
                     // times, each screen with its own projection at the rig's angle
                     float views[3][16];
                     const int nviews = full ? wheelkit_views(v.proj, float(out_w) / 3.0f / float(out_h) * SCREEN_H / SCREEN_W, views) : 0;
+                    if (nviews == 3) three_drawn_ = true;
                     for (int s = 0; s < (nviews ? 3 : 1); s++) {
                     if (nviews == 1 && s != 1) continue;   // not in a race: the centre screen only
                     VkViewport viewport{vx * sx + jitter_x, v.y * sy + jitter_y, vw * sx, v.h * sy, 0.0f, 1.0f};
@@ -2028,7 +2029,11 @@ void R3DRenderer::record_compose(const Frame& f, const ComposePush& pc, VkImageV
     VkRenderingAttachmentInfo ta{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
     ta.imageView = target;
     ta.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    ta.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    // Wheelkit (a modified version's addition): on three screens a picture without the world in three views (menus, a
+    // course's title card) goes on the centre screen, the side screens black: never the 2D's edge columns stretched
+    const bool centre = wheelkit_three_screens() && !three_drawn_;
+    ta.loadOp = centre ? VK_ATTACHMENT_LOAD_OP_CLEAR : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    ta.clearValue.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
     ta.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     VkRenderingInfo ti{VK_STRUCTURE_TYPE_RENDERING_INFO};
     ti.renderArea = {{0, 0}, extent};
@@ -2041,6 +2046,7 @@ void R3DRenderer::record_compose(const Frame& f, const ComposePush& pc, VkImageV
     VkViewport full{0, 0, float(extent.width), float(extent.height), 0, 1};
     vkCmdSetViewport(cmd, 0, 1, &full);
     VkRect2D all{{0, 0}, extent};
+    if (centre) all = {{int32_t(extent.width / 3), 0}, {extent.width / 3, extent.height}};
     vkCmdSetScissor(cmd, 0, 1, &all);
     vkCmdPushConstants(cmd, compose_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
     vkCmdDraw(cmd, 3, 1, 0, 0);
@@ -2116,6 +2122,7 @@ void R3DRenderer::record(VkCommandBuffer cmd, VkImageView target, VkExtent2D ext
     if (gpu_times_) gpu_time_mark(cmd, GPU_RT);
     record_shadows(f);
     if (gpu_times_) gpu_time_mark(cmd, GPU_SHADOWS);
+    three_drawn_ = false;
     record_world(f);
     if (gpu_times_ && !gpu_ao_marked_) {   // no occlusion pass this frame: it took no time
         gpu_time_mark(cmd, GPU_AO_FROM);

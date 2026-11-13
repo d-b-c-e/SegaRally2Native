@@ -22,7 +22,7 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.5.0-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.5.1-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Its sign is checked in an injected race (the force asked pulls toward the centre); the feel is the owner's to judge
 constexpr float FORCE_SCALE = 0.4f;
@@ -32,6 +32,7 @@ wk_triples g_screens{};
 std::atomic<float> g_heading{0.0f};  // radians, clockwise from above: the camera's heading (window thread)
 std::atomic<bool> g_racing{false};  // a race is on (game thread): three views only then, the centre screen otherwise
 bool g_three = false;              // three projected views over the three screens (the rig's measurements)
+std::atomic<unsigned long long> g_world_at{0};   // when the 3D world was last drawn (a course's title card has none)
 wk_model3_servo g_servo;           // game thread only
 unsigned g_frames = 0;
 
@@ -159,6 +160,7 @@ void wheelkit_window(void* hwnd) {
 // views take a centred Direct3D right-handed projection, row-vector and row-major: the same 16 numbers as a
 // column-major one acting on columns, so rotation x projection there is this matrix here
 int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7]) {
+    g_world_at = GetTickCount64();
     if (!g_three) return 0;
     const double n = 0.1, f = 10000.0;
     double c[16] = {};
@@ -196,6 +198,8 @@ int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7]
     }
     return count;
 }
+bool wheelkit_three_screens() { return g_three; }
+
 // The camera's heading over the ground: its forward axis (view -z) in the world's x and z. The game's own heading is not
 // in its known RAM; the camera rides with the car, so it turns with it
 void wheelkit_camera(const float* a) {
@@ -312,7 +316,8 @@ void wheelkit_game_frame() {
     }
     wk_car car{};
     car.size = sizeof car;
-    car.race_on = int(rd32(SEQUENCE)) == 1 && rd32(SELECT_STEP) == 17 && rd32(RACE_RESULT) <= 1;
+    // The race from its first picture of the world: not during the course's title card (2D, about 5 s)
+    car.race_on = int(rd32(SEQUENCE)) == 1 && rd32(SELECT_STEP) == 17 && rd32(RACE_RESULT) <= 1 && GetTickCount64() - g_world_at.load() < 250;
     float speed = std::bit_cast<float>(rd32(SPEED));
     car.speed = std::isfinite(speed) ? speed : 0.0f;
     car.gear = std::clamp(int(rd32(HUD_GEAR)), 0, 4);

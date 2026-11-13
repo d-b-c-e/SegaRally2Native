@@ -19,6 +19,7 @@ void wheelkit_display(float& aspect, bool& hud_centre);
 // The three screens' projections for a full-screen 3D viewport (projection p, widened by widen to fill one
 // screen), left to right; 0 when the game draws one view
 int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7] = nullptr);
+bool wheelkit_three_screens();   // the window covers the three screens (2D-only pictures go on the centre one)
 // Window thread, each new frame of the world: its x, y (up) and z axes in the camera's view space
 void wheelkit_camera(const float* world_axes);
 void wheelkit_window(void* hwnd);
@@ -41,6 +42,7 @@ inline bool wheelkit_start() { return false; }
 inline bool wheelkit_on() { return false; }
 inline void wheelkit_display(float&, bool&) {}
 inline int wheelkit_views(const float*, float, float (*)[16], float (*)[7] = nullptr) { return 0; }
+inline bool wheelkit_three_screens() { return false; }
 inline void wheelkit_camera(const float*) {}
 inline void wheelkit_window(void*) {}
 inline bool wheelkit_controls(Inputs&, bool) { return false; }
