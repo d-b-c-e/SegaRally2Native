@@ -1,6 +1,7 @@
 #include "r3d_world.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -128,6 +129,7 @@ static void ground_under(const std::vector<R3DInstance>& list, const float* axes
         if (!same_axes(in.axes, axes)) continue;
         for (uint32_t i = in.opaque[0]; i + 2 < in.opaque[1]; i += 3) {
             const R3DVertex* t = &out.vertices[v.opaque_first + i];
+            if (t[0].flags & R3D_ACTOR) continue;   // (a car turned the scenery's way, settle_cars)
             float u[3], h[3], w[3];
             for (int k = 0; k < 3; k++) u[k] = dot(t[k].pos, ax), h[k] = dot(t[k].pos, up), w[k] = dot(t[k].pos, az);
             float u0 = std::min({u[0], u[1], u[2]}), u1 = std::max({u[0], u[1], u[2]});
@@ -224,6 +226,47 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     for (auto it = lifts.begin(); it != lifts.end();)
         it = out.frame - it->second.seen > 30 ? lifts.erase(it) : std::next(it);
     if (cars.empty() && lifts.empty()) return;
+    // A car driving straight along one of the world's axes is turned exactly
+    // the scenery's way: its bodywork, glass and shine (the models placed at
+    // the car's own origin; its wheels turn) were taken for scenery, left up
+    // while the wheels and the patch went down, the body riding 20 cm over
+    // its wheels, then dropping onto them as the car turned a little (the
+    // desert demo, the Lancer coming along the fence). The models turned the
+    // scenery's way with their origin over a patch, together the shine of a
+    // car's paint (see `shine` below), are that car's, and its models of the
+    // world (R3D_ACTOR: not ground, not scenery to set down, lit and shadowed
+    // as a car)
+    std::vector<int> aligned(list.size(), -1);
+    for (size_t i = 0; i < cars.size(); i++) {
+        const Car& c = cars[i];
+        std::vector<std::pair<std::array<int32_t, 3>, size_t>> over;   // (origin in cm, instance)
+        for (size_t n = 0; n < list.size(); n++) {
+            const R3DInstance& in = list[n];
+            if (!same_axes(in.axes, axes)) continue;
+            float u = dot(in.origin, ax), h = dot(in.origin, up), w = dot(in.origin, az);
+            if (u < c.lo[0] - 0.5f || u > c.hi[0] + 0.5f || w < c.lo[2] - 0.5f || w > c.hi[2] + 0.5f) continue;
+            if (h < c.lo[1] - 1.0f || h > c.hi[1] + 4.0f) continue;
+            over.push_back({{int32_t(std::lround(u * 100)), int32_t(std::lround(h * 100)), int32_t(std::lround(w * 100))}, n});
+        }
+        std::sort(over.begin(), over.end());
+        for (size_t a = 0; a < over.size();) {
+            size_t b = a;
+            uint32_t shiny = 0;
+            for (; b < over.size() && over[b].first == over[a].first; b++) {
+                const R3DInstance& in = list[over[b].second];
+                for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++)
+                    if (out.vertices[v.opaque_first + k].flags & R3D_SPECULAR) shiny++;
+            }
+            if (shiny >= 300)
+                for (size_t k = a; k < b; k++) {
+                    const R3DInstance& in = list[over[k].second];
+                    aligned[over[k].second] = int(i);
+                    for (uint32_t q = in.opaque[0]; q < in.opaque[1]; q++) out.vertices[v.opaque_first + q].flags |= R3D_ACTOR;
+                    for (uint32_t q = in.trans[0]; q < in.trans[1]; q++) out.vertices[v.trans_first + q].flags |= R3D_ACTOR;
+                }
+            a = b;
+        }
+    }
     if (!cars.empty()) ground_under(list, axes, out, v, queries);
     for (Car& c : cars) {
         const R3DInstance& in = list[c.patch];
@@ -288,10 +331,11 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     std::vector<uint32_t> shine(cars.size(), 0);
     for (size_t n = 0; n < list.size(); n++) {
         const R3DInstance& in = list[n];
-        if (same_axes(in.axes, axes)) continue;
+        if (same_axes(in.axes, axes) && aligned[n] < 0) continue;
         float u = dot(in.origin, ax), h = dot(in.origin, up), w = dot(in.origin, az);
         float nearest = 1e30f;
-        for (size_t i = 0; i < cars.size(); i++) {
+        owner[n] = aligned[n];
+        for (size_t i = 0; i < cars.size() && aligned[n] < 0; i++) {
             const Car& c = cars[i];
             if (n == c.patch) {
                 owner[n] = int(i);
@@ -308,7 +352,7 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     }
     for (size_t n = 0; n < list.size(); n++) {
         const R3DInstance& in = list[n];
-        if (same_axes(in.axes, axes)) continue;
+        if (same_axes(in.axes, axes) && aligned[n] < 0 && !held.count(in.key)) continue;
         float down = 0;
         if (owner[n] >= 0) {
             const Car& c = cars[owner[n]];
@@ -322,6 +366,10 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
             down = it->second;
         }
         taken[n] = 1;
+        if (aligned[n] < 0 && same_axes(in.axes, axes)) {   // (held: a car's turned the scenery's way)
+            for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++) out.vertices[v.opaque_first + k].flags |= R3D_ACTOR;
+            for (uint32_t k = in.trans[0]; k < in.trans[1]; k++) out.vertices[v.trans_first + k].flags |= R3D_ACTOR;
+        }
         if (std::fabs(down) <= 0.002f) continue;
         auto lower = [&](R3DVertex& x) {
             for (int k = 0; k < 3; k++) x.pos[k] -= down * up[k], x.prev[k] -= down * up[k];
