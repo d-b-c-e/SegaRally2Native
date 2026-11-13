@@ -265,7 +265,13 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     // the camera are in viewports of their own, over patches in the world like
     // these (R3DSceneBuilder::settle_player_car measures and moves those)
     std::vector<int> owner(list.size(), -1);
-    std::vector<uint32_t> solid(cars.size(), 0);
+    // A car's shine: the corners of its paint and glass (specular, solid). A
+    // man standing over a patch is no car: the start line's flagman walks into
+    // the corner of the player's patch during the countdown in the desert,
+    // some 2600 solid corners but only 12 shiny ones (the cars of the demos
+    // have 1900 and more). Taken for its car, he set the patch down under the
+    // road (it vanished for half a second) and sank into it himself
+    std::vector<uint32_t> shine(cars.size(), 0);
     for (size_t n = 0; n < list.size(); n++) {
         const R3DInstance& in = list[n];
         if (same_axes(in.axes, axes)) continue;
@@ -282,7 +288,9 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
             float du = u - 0.5f * (c.lo[0] + c.hi[0]), dw = w - 0.5f * (c.lo[2] + c.hi[2]);
             if (du * du + dw * dw < nearest) nearest = du * du + dw * dw, owner[n] = int(i);
         }
-        if (owner[n] >= 0) solid[owner[n]] += in.opaque[1] - in.opaque[0];
+        if (owner[n] >= 0)
+            for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++)
+                if (out.vertices[v.opaque_first + k].flags & R3D_SPECULAR) shine[owner[n]]++;
     }
     for (size_t n = 0; n < list.size(); n++) {
         const R3DInstance& in = list[n];
@@ -290,7 +298,7 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
         float down = 0;
         if (owner[n] >= 0) {
             const Car& c = cars[owner[n]];
-            if (solid[owner[n]] < 300) continue;
+            if (shine[owner[n]] < 300) continue;
             down = c.down - (n == c.patch ? 0.03f : 0.0f);   // (the patch on the road itself would flicker through it)
             lifts[c.lift].pieces.push_back(in.key);
         } else {
