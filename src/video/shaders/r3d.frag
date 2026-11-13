@@ -460,6 +460,7 @@ void main() {
     // Sun shadow pass (fog_color.w < 0): only what stands near the ground casts
     // shadows; canopies and roofs high above would put whole scenes in the dark
     if (vp.fog_color.w < 0.0 && dot(view_pos, vp.sun.xyz) + vp.fog_color.x > vp.fog_color.y) discard;
+    if (vp.fog_color.w < 0.0 && glow_sprite(flags)) discard;   // (a camera flash casts no shadow)
 
     vec4 t = vec4(1.0);
     if ((flags & TEXTURED) != 0u) {
