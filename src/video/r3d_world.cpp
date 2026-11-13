@@ -327,7 +327,12 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     // the corner of the player's patch during the countdown in the desert,
     // some 2600 solid corners but only 12 shiny ones (the cars of the demos
     // have 1900 and more). Taken for its car, he set the patch down under the
-    // road (it vanished for half a second) and sank into it himself
+    // road (it vanished for half a second) and sank into it himself. The
+    // mountain's flagman waves a flag of 600 shiny corners over the player's
+    // patch on the grid: whenever it dipped it made 612 with him, taken for
+    // a car (300 then), the patch went down 5 cm and the player's car, set
+    // down by its patch, hopped with it. The cars of the demos have 3800 and
+    // more (the whole attract), so 1500
     std::vector<uint32_t> shine(cars.size(), 0);
     for (size_t n = 0; n < list.size(); n++) {
         const R3DInstance& in = list[n];
@@ -356,7 +361,7 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
         float down = 0;
         if (owner[n] >= 0) {
             const Car& c = cars[owner[n]];
-            if (shine[owner[n]] < 300) continue;
+            if (shine[owner[n]] < 1500) continue;
             down = c.down - (n == c.patch ? 0.03f : 0.0f);   // (the patch on the road itself would flicker through it)
             lifts[c.lift].pieces.push_back(in.key);
         } else {
