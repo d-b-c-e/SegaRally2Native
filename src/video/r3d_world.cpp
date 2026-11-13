@@ -252,12 +252,26 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
         for (size_t a = 0; a < over.size();) {
             size_t b = a;
             uint32_t shiny = 0;
+            // ... and no bigger than a car over its patch: the snowy course's
+            // icy road (shiny, the scenery's way) has models whose origin lies
+            // under the player's patch on the grid; taken for the car's, the
+            // road ahead of it went dark until the car drove off them
+            float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+            auto grow = [&](const R3DVertex& x) {
+                float p[3] = {dot(x.pos, ax), dot(x.pos, up), dot(x.pos, az)};
+                for (int k = 0; k < 3; k++) lo[k] = std::min(lo[k], p[k]), hi[k] = std::max(hi[k], p[k]);
+            };
             for (; b < over.size() && over[b].first == over[a].first; b++) {
                 const R3DInstance& in = list[over[b].second];
-                for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++)
+                for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++) {
                     if (out.vertices[v.opaque_first + k].flags & R3D_SPECULAR) shiny++;
+                    grow(out.vertices[v.opaque_first + k]);
+                }
+                for (uint32_t k = in.trans[0]; k < in.trans[1]; k++) grow(out.vertices[v.trans_first + k]);
             }
-            if (shiny >= 300)
+            bool car_sized = lo[0] >= c.lo[0] - 1.0f && hi[0] <= c.hi[0] + 1.0f && lo[2] >= c.lo[2] - 1.0f && hi[2] <= c.hi[2] + 1.0f &&
+                             hi[1] - lo[1] <= 2.5f;
+            if (shiny >= 300 && car_sized)
                 for (size_t k = a; k < b; k++) {
                     const R3DInstance& in = list[over[k].second];
                     aligned[over[k].second] = int(i);
