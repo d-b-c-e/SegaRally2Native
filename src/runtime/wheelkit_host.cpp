@@ -13,6 +13,7 @@
 #include "ppc_rt.h"
 #include "wheelkit.h"
 #include "wheelkit_model3.h"
+#include "proxy/dbce_proxy_side_black.hpp"   // the runtime's black side screens (header only)
 
 namespace {
 
@@ -20,7 +21,7 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.4.1-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.4.2-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Its sign is checked in an injected race (the force asked pulls toward the centre); the feel is the owner's to judge
 constexpr float FORCE_SCALE = 0.4f;
@@ -110,27 +111,32 @@ bool wheelkit_start() {
     return true;
 }
 
-// Before the window: on three screens the picture is one wide flat view over all of them, the HUD in the middle 4:3
-void wheelkit_display(float& aspect, bool& hud_centre) {
+// Before the window: the layout (the rig profile's [Triple] Screens, else the displays)
+void wheelkit_display() {
     if (!g_on) return;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);   // the layout is in real pixels
     g_screens.size = sizeof g_screens;
-    if (!p_wk_triples_get(&g_screens)) return;
-    if (g_panel) p_wk_panel_set_text("display.status", g_screens.text, WK_TONE_NORMAL);
-    if (!g_screens.span || g_screens.height <= 0) return;
-    aspect = float(g_screens.width) / float(g_screens.height);
-    hud_centre = true;
+    if (!p_wk_triples_get(&g_screens)) g_screens.span = 0;
+    else if (g_panel) p_wk_panel_set_text("display.status", g_screens.text, WK_TONE_NORMAL);
 }
 
+// On three screens the game stays on the centre one, at its own shape, and the side screens are black (one flat
+// picture over three is a stretched picture; three angled views are not built yet)
 void wheelkit_window(void* hwnd) {
     if (!g_on) return;
     p_wk_set_window(hwnd);
     if (!g_screens.span) return;
-    HWND w = static_cast<HWND>(hwnd);   // one borderless window over the three screens
+    HWND w = static_cast<HWND>(hwnd);
+    const int x = g_screens.x, y = g_screens.y, cx = x + g_screens.center_x, cw = g_screens.center_width, h = g_screens.height;
     SetWindowLongA(w, GWL_STYLE, (GetWindowLongA(w, GWL_STYLE) & ~WS_OVERLAPPEDWINDOW) | WS_POPUP);
-    SetWindowPos(w, HWND_TOP, g_screens.x, g_screens.y, g_screens.width, g_screens.height, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    SetWindowPos(w, HWND_TOP, cx, y, cw, h, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    dbce::proxy::sideblack::Options o;
+    o.sides[0] = RECT{x, y, cx, y + h};
+    o.sides[1] = RECT{cx + cw, y, x + g_screens.width, y + h};
+    o.log = [](const char* line) { p_wk_log(line); };
+    dbce::proxy::sideblack::Start(o);
+    p_wk_log("sega-rally-2: three screens: the game on the centre screen, the side screens black");
 }
-
 void wheelkit_frame(const VkPresenter& vk, void* cmd, void* view, unsigned width, unsigned height) {
     if (!g_panel) return;
     if (!g_attached) {

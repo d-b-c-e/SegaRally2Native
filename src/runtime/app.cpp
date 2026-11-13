@@ -383,7 +383,7 @@ int main(int argc, char** argv) {
     // Window: the game runs on its own thread at real speed; this thread draws
     // the latest image at the monitor's refresh rate (vsync)
     VkPresenter presenter;
-    wheelkit_display(g_opt.max_aspect, g_opt.hud_centre);
+    wheelkit_display();
     if (!presenter.init("Sega Rally 2 Native by snicolast", int(SCREEN_H * 2 * std::max(g_opt.max_aspect, 4.0f / 3.0f)), SCREEN_H * 2,
                         g_opt.dlaa)) {
         fprintf(stderr, "Could not start Vulkan; try --headless\n");

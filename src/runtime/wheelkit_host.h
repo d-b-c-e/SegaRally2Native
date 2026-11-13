@@ -14,8 +14,8 @@ class VkPresenter;
 // Loads and starts the runtime (no window yet). False: upstream's own controls
 bool wheelkit_start();
 bool wheelkit_on();
-// Before the window: three screens widen the view and keep the HUD in the middle
-void wheelkit_display(float& aspect, bool& hud_centre);
+// Before the window: the layout of the screens; on three, the game stays on the centre one
+void wheelkit_display();
 void wheelkit_window(void* hwnd);
 // Window thread, once per frame: the profile's snapshot into the cabinet's
 // controls while `driving`, else its menu buttons into wheelkit_menu_key().
@@ -34,7 +34,7 @@ void wheelkit_stop();
 #else
 inline bool wheelkit_start() { return false; }
 inline bool wheelkit_on() { return false; }
-inline void wheelkit_display(float&, bool&) {}
+inline void wheelkit_display() {}
 inline void wheelkit_window(void*) {}
 inline bool wheelkit_controls(Inputs&, bool) { return false; }
 inline int wheelkit_menu_key() { return 0; }

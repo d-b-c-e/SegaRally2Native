@@ -281,7 +281,7 @@ target_link_libraries(SegaRally2 PRIVATE SDL3::SDL3-static winmm ole32 oleaut32 
 set(WHEELKIT_SDK "" CACHE PATH "A wheelkit checkout with runtime/native/sdk built")
 if(WHEELKIT_SDK)
     target_sources(SegaRally2 PRIVATE src/runtime/wheelkit_host.cpp)
-    target_include_directories(SegaRally2 PRIVATE ${WHEELKIT_SDK}/runtime/native/sdk)
+    target_include_directories(SegaRally2 PRIVATE ${WHEELKIT_SDK}/runtime/native/sdk ${WHEELKIT_SDK}/runtime/native)
     target_compile_definitions(SegaRally2 PRIVATE SR2_WHEELKIT)
     add_custom_command(TARGET SegaRally2 POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${WHEELKIT_SDK}/runtime/native/sdk/build/x64/wheelkit.dll $<TARGET_FILE_DIR:SegaRally2>)
