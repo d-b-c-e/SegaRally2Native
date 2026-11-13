@@ -164,9 +164,14 @@ void R3DSceneBuilder::build(const R3DFrameState& state, R3DScene& out) {
     }
     settle_player_car(out);
     static const float shine = getenv("SR2_SHINE") ? float(atof(getenv("SR2_SHINE"))) : 0.0f;   // the cars' painted shine layer, F of its strength: left out (it veiled the paint, a grey box over the roof); SR2_SHINE=F brings it back
+    // (Not the glows the game draws with a texture alpha too, alpha tested,
+    // which the shine layer never is: the spectators' camera flashes, turned
+    // their own way to face an outside camera, are actors, and went with it:
+    // none was ever seen behind the car; the cars' own exhaust flames too)
     if (shine != 1.0f)
         for (R3DVertex& x : out.vertices)
-            if ((x.flags & (R3D_CAR | R3D_ACTOR)) && (x.flags & (R3D_LUMINOUS | R3D_TEX_ALPHA)) == (R3D_LUMINOUS | R3D_TEX_ALPHA))
+            if ((x.flags & (R3D_CAR | R3D_ACTOR)) && (x.flags & (R3D_LUMINOUS | R3D_TEX_ALPHA)) == (R3D_LUMINOUS | R3D_TEX_ALPHA) &&
+                !(x.flags & R3D_ALPHA_TEST))
                 x.color = (x.color & 0x00FFFFFFu) | (uint32_t(std::clamp(float(x.color >> 24) * shine, 0.0f, 255.0f)) << 24);
     // Full-screen fills (fades, flashes) outside the world reach the window's sides
     r3d_widen_screen_fills(out, std::max(fov_widened_, view_wide_));
