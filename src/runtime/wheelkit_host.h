@@ -15,7 +15,12 @@ class VkPresenter;
 bool wheelkit_start();
 bool wheelkit_on();
 // Before the window: the layout of the screens; on three, the game stays on the centre one
-void wheelkit_display();
+void wheelkit_display(float& aspect, bool& hud_centre);
+// The three screens' projections for a full-screen 3D viewport (projection p, widened by widen to fill one
+// screen), left to right; 0 when the game draws one view
+int wheelkit_views(const float* p, float widen, float out[3][16]);
+// Window thread, each new frame of the world: its x, y (up) and z axes in the camera's view space
+void wheelkit_camera(const float* world_axes);
 void wheelkit_window(void* hwnd);
 // Window thread, once per frame: the profile's snapshot into the cabinet's
 // controls while `driving`, else its menu buttons into wheelkit_menu_key().
@@ -34,7 +39,9 @@ void wheelkit_stop();
 #else
 inline bool wheelkit_start() { return false; }
 inline bool wheelkit_on() { return false; }
-inline void wheelkit_display() {}
+inline void wheelkit_display(float&, bool&) {}
+inline int wheelkit_views(const float*, float, float (*)[16]) { return 0; }
+inline void wheelkit_camera(const float*) {}
 inline void wheelkit_window(void*) {}
 inline bool wheelkit_controls(Inputs&, bool) { return false; }
 inline int wheelkit_menu_key() { return 0; }

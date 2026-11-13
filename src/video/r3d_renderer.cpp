@@ -1,4 +1,5 @@
 #include "r3d_renderer.h"
+#include "../runtime/wheelkit_host.h"   // Wheelkit: three views (a modified version's addition)
 
 #include <algorithm>
 #include <mutex>
@@ -1002,6 +1003,7 @@ R3DRenderer::WorldPose R3DRenderer::world_pose(const R3DViewport* w) {
         pose_now_.valid = w != nullptr;
         if (w) {
             memcpy(pose_now_.axes, w->world_axes, sizeof(pose_now_.axes));
+            wheelkit_camera(w->world_axes);   // Wheelkit: the camera's heading for telemetry
             memcpy(pose_now_.camera, w->camera, sizeof(pose_now_.camera));
             float sl = std::sqrt(w->sun[0] * w->sun[0] + w->sun[1] * w->sun[1] + w->sun[2] * w->sun[2]);
             for (int i = 0; i < 3; i++) pose_now_.sun[i] = sl > 0 ? w->sun[i] / sl : 0;
@@ -1570,12 +1572,20 @@ void R3DRenderer::record_world(const Frame& f) {
                         else if ((top && s[1] > 0 && v.x >= s[1]) || (bottom && s[2] > 0 && v.x >= s[2]))
                             vx = v.x + 2.0f * lay.game_x0;
                     }
+                    // Wheelkit (a modified version's addition): on three screens a full-screen viewport is drawn three
+                    // times, each screen with its own projection at the rig's angle
+                    float views[3][16];
+                    const int nviews = full ? wheelkit_views(v.proj, float(out_w) / 3.0f / float(out_h) * SCREEN_H / SCREEN_W, views) : 0;
+                    for (int s = 0; s < (nviews ? 3 : 1); s++) {
+                    if (nviews == 1 && s != 1) continue;   // not in a race: the centre screen only
                     VkViewport viewport{vx * sx + jitter_x, v.y * sy + jitter_y, vw * sx, v.h * sy, 0.0f, 1.0f};
+                    if (nviews) viewport.x = float(s) * float(out_w) / 3.0f + jitter_x, viewport.width = float(out_w) / 3.0f;
                     vkCmdSetViewport(cmd, 0, 1, &viewport);
                     int32_t x0 = std::max(0, int32_t(vx * sx)), y0 = std::max(0, int32_t(v.y * sy));
                     VkRect2D sc{{x0, y0},
                                 {std::min(out_w - uint32_t(x0), uint32_t(vw * sx + 0.5f)),
                                  std::min(out_h - uint32_t(y0), uint32_t(v.h * sy + 0.5f))}};
+                    if (nviews) sc.offset.x = int32_t(s * out_w / 3), sc.extent.width = out_w / 3;
                     vkCmdSetScissor(cmd, 0, 1, &sc);
                     ViewportPush pc{};
                     memcpy(pc.proj, v.proj, 64);
@@ -1583,6 +1593,7 @@ void R3DRenderer::record_world(const Frame& f) {
                         pc.proj[0] /= widen;
                         pc.proj[8] /= widen;
                     }
+                    if (nviews) memcpy(pc.proj, views[s], 64);
                     pc.sun[0] = v.sun[0];
                     pc.sun[1] = v.sun[1];
                     pc.sun[2] = v.sun[2];
@@ -1651,6 +1662,7 @@ void R3DRenderer::record_world(const Frame& f) {
                     }
                     draw_runs(translucent_, blob_);
                     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, translucent_);
+                    }
                 }
             }
             i = j;

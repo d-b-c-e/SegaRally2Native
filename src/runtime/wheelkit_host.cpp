@@ -3,6 +3,7 @@
 #include "wheelkit_host.h"
 
 #include <algorithm>
+#include <atomic>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -21,19 +22,23 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.4.2-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.5.0-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Its sign is checked in an injected race (the force asked pulls toward the centre); the feel is the owner's to judge
 constexpr float FORCE_SCALE = 0.4f;
 bool g_on = false, g_panel = false, g_attached = false;
 int g_keys[16], g_key_count = 0;   // window thread only
 wk_triples g_screens{};
+std::atomic<float> g_heading{0.0f};  // radians, clockwise from above: the camera's heading (window thread)
+std::atomic<bool> g_racing{false};  // a race is on (game thread): three views only then, the centre screen otherwise
+bool g_three = false;              // three projected views over the three screens (the rig's measurements)
 wk_model3_servo g_servo;           // game thread only
 unsigned g_frames = 0;
 
 // Game RAM (docs/game_ram.md)
 constexpr uint32_t SEQUENCE = 0x22D618, SELECT_STEP = 0x22435C, RACE_RESULT = 0x22D630, RACE_TIME = 0x22D080;
 constexpr uint32_t SPEED = 0x22F3A8, HUD_GEAR = 0x13AB80, HUD_LAP = 0x13AB94, HUD_POSITION = 0x13AB74, TRANSMISSION = 0x224334;
+constexpr uint32_t VIEW = 0x2244EC;   // VIEW CHANGE: 4 the first view, 5 the other (found by RAM dumps around presses; byte)
 
 // The F6 panel's pages (the runtime owns the force and Steering strength rows). Screens and telemetry follow the
 // rig profile Wheelkit writes into save\wheelkit.ini ([Triple] Screens, [Telemetry] Enabled): no row for them
@@ -108,20 +113,26 @@ bool wheelkit_start() {
     int length = snprintf(pages, sizeof pages, PAGES, VERSION);
     g_panel = p_wk_panel_configure(pages, size_t(length)) != 0;
     if (g_panel) p_wk_panel_set_text("help.runtime", p_wk_runtime_version(), WK_TONE_NORMAL);
+    static const wk_camera_view VIEWS[] = {{"Bumper", "Bumper", 1}, {"Chase", "Chase", 0}};   // the cabinet's two views
+    p_wk_cameras_configure(VIEWS, 2);
     return true;
 }
 
-// Before the window: the layout (the rig profile's [Triple] Screens, else the displays)
-void wheelkit_display() {
+// Before the window: the layout (the rig profile's [Triple] Screens, else the displays). With the rig's measurements
+// the window covers the three screens and the 3D world is drawn three times at the rig's angles (wheelkit_views); the
+// 2D screens and the HUD stay in the middle
+void wheelkit_display(float& aspect, bool& hud_centre) {
     if (!g_on) return;
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);   // the layout is in real pixels
     g_screens.size = sizeof g_screens;
     if (!p_wk_triples_get(&g_screens)) g_screens.span = 0;
     else if (g_panel) p_wk_panel_set_text("display.status", g_screens.text, WK_TONE_NORMAL);
+    g_three = g_screens.span && g_screens.rig && g_screens.height > 0;
+    if (g_three) aspect = float(g_screens.width) / float(g_screens.height), hud_centre = true;
 }
 
-// On three screens the game stays on the centre one, at its own shape, and the side screens are black (one flat
-// picture over three is a stretched picture; three angled views are not built yet)
+// On three screens without the rig's measurements the game stays on the centre one, at its own shape, and the side
+// screens are black (one flat picture over three is a stretched picture)
 void wheelkit_window(void* hwnd) {
     if (!g_on) return;
     p_wk_set_window(hwnd);
@@ -129,6 +140,11 @@ void wheelkit_window(void* hwnd) {
     HWND w = static_cast<HWND>(hwnd);
     const int x = g_screens.x, y = g_screens.y, cx = x + g_screens.center_x, cw = g_screens.center_width, h = g_screens.height;
     SetWindowLongA(w, GWL_STYLE, (GetWindowLongA(w, GWL_STYLE) & ~WS_OVERLAPPEDWINDOW) | WS_POPUP);
+    if (g_three) {
+        SetWindowPos(w, HWND_TOP, x, y, g_screens.width, h, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        p_wk_log("sega-rally-2: three screens: three views at the rig's angles, the 2D screens and the HUD on the centre");
+        return;
+    }
     SetWindowPos(w, HWND_TOP, cx, y, cw, h, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     dbce::proxy::sideblack::Options o;
     o.sides[0] = RECT{x, y, cx, y + h};
@@ -137,6 +153,42 @@ void wheelkit_window(void* hwnd) {
     dbce::proxy::sideblack::Start(o);
     p_wk_log("sega-rally-2: three screens: the game on the centre screen, the side screens black");
 }
+
+// The three screens' projections for a full-screen 3D viewport of the game, left to right, from its projection `p`
+// (column-major, Vulkan clip: y down, depth near / -z) and the widening that makes it fill one screen. The runtime's
+// views take a centred Direct3D right-handed projection, row-vector and row-major: the same 16 numbers as a
+// column-major one acting on columns, so rotation x projection there is this matrix here
+int wheelkit_views(const float* p, float widen, float out[3][16]) {
+    if (!g_three) return 0;
+    const double n = 0.1, f = 10000.0;
+    double c[16] = {};
+    c[0] = p[0] / widen, c[5] = std::fabs(p[5]), c[10] = f / (n - f), c[11] = -1, c[14] = n * f / (n - f);
+    wk_triple_views tv{};
+    tv.size = sizeof tv;
+    if (!p_wk_triples_views(c, &tv)) return 0;
+    const int count = g_racing ? 3 : 1;   // 1: the centre screen alone (views[1]), the sides black
+    for (int s = 0; s < 3; s++) {
+        double m[16];
+        for (int r = 0; r < 4; r++)
+            for (int k = 0; k < 4; k++) {
+                m[r * 4 + k] = 0;
+                for (int j = 0; j < 4; j++) m[r * 4 + k] += tv.rotation[s][r * 4 + j] * tv.projection[s][j * 4 + k];
+            }
+        for (int r = 0; r < 4; r++) {   // row k of the clip position is m[r * 4 + k] over r
+            out[s][r * 4 + 0] = float(m[r * 4 + 0] - p[8] * m[r * 4 + 3]);    // the game's own shear, as at the centre
+            out[s][r * 4 + 1] = float(-m[r * 4 + 1] - p[9] * m[r * 4 + 3]);   // y down
+            out[s][r * 4 + 2] = r == 3 ? p[14] : 0.0f;                        // depth: near / -z, as the game's
+            out[s][r * 4 + 3] = float(m[r * 4 + 3]);
+        }
+    }
+    return count;
+}
+// The camera's heading over the ground: its forward axis (view -z) in the world's x and z. The game's own heading is not
+// in its known RAM; the camera rides with the car, so it turns with it
+void wheelkit_camera(const float* a) {
+    if (g_on && (a[2] != 0 || a[8] != 0)) g_heading = std::atan2(-a[2], -a[8]);
+}
+
 void wheelkit_frame(const VkPresenter& vk, void* cmd, void* view, unsigned width, unsigned height) {
     if (!g_panel) return;
     if (!g_attached) {
@@ -255,6 +307,13 @@ void wheelkit_game_frame() {
     car.brake = float(g_inputs.brake) / 255.0f;
     car.handbrake = g_inputs.handbrake ? 1.0f : 0.0f;
     car.steer = steer;
+    car.yaw = car.race_on ? g_heading.load() : 0.0f;
+    g_racing = car.race_on != 0;
+    if (car.race_on) {   // the view in use, for the runtime's cameras (its name reaches the proof lines)
+        wk_camera cam{};
+        cam.size = sizeof cam;
+        p_wk_cameras_frame(rd8(VIEW) == 5 ? 1 : 0, nullptr, 0, &cam);
+    }
     car.race_time = float(rd32(RACE_TIME)) / 6000.0f;
     car.lap = int(rd32(HUD_LAP)) + 1;
     car.race_position = int(rd32(HUD_POSITION)) + 1;
@@ -269,9 +328,9 @@ void wheelkit_game_frame() {
     }
     if (car.race_on && race_frames++ % 60 == 0 && race_frames < 60 * 120) {
         snprintf(line, sizeof line, "sega-rally-2: telemetry in a race: %.1f m/s, gear %d, lap %d, position %d, %.2f s; "
-                 "cabinet steer %d accel %d brake %d lever %d; force asked %.3f",
+                 "cabinet steer %d accel %d brake %d lever %d; force asked %.3f; camera heading %.0f",
                  car.speed, car.gear, car.lap, car.race_position, car.race_time, int(g_inputs.steer), int(g_inputs.accel),
-                 int(g_inputs.brake), int(g_inputs.gear), force);
+                 int(g_inputs.brake), int(g_inputs.gear), force, car.yaw * 57.29578f);
         p_wk_log(line);
     }
 }
