@@ -179,6 +179,8 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     struct Lift {
         float height = -1;   // how far down (-1: not known yet; a little under 0: up)
         uint32_t skips = 0;
+        bool kerb = false;                 // a step under the patch is being waited out
+        float raw = 0;                     // the last measurement
         uint64_t seen = 0, measured = 0;   // frames
         float at[3] = {0, 0, 0};           // where its patch was
         std::vector<uint32_t> pieces;      // the car's models (their keys), for the frames its patch is not drawn
@@ -244,13 +246,25 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
         memcpy(lift.at, at, sizeof at);
         // (under the road too, where the game's ground dips below the one it draws: the car comes up)
         bool measured = raw > -0.15f && raw < 0.45f;
-        if (measured) lift.measured = out.frame;
-        else if (out.frame - lift.measured > 120) lift.height = -1;
+        // A kerb, a bump: the ground under the patch steps from one frame to the
+        // next, and is not followed unless it stays. Where it changes little by
+        // little (the road drawn coarser away from the camera) or was not seen
+        // for a while (the patch left out as the car went past the camera), it
+        // is followed at once. Never in one jump either way: a car at 40 m
+        // hovered 15 to 28 cm while that was taken for a kerb, then dropped onto
+        // the road in a single frame (the desert demo, the second car past the camera)
+        bool step = measured && out.frame - lift.measured <= 3 && std::fabs(raw - lift.raw) > 0.05f;
         if (measured) {
-            if (lift.height < -0.5f) lift.height = raw, lift.skips = 0;
-            else if (std::fabs(raw - lift.height) <= 0.1f) lift.height += 0.5f * (raw - lift.height), lift.skips = 0;
-            else if (++lift.skips >= 30) lift.height = raw, lift.skips = 0;   // (a kerb under the patch is not followed, unless it stays)
-        }
+            if (lift.height < -0.5f) lift.height = raw, lift.skips = 0, lift.kerb = false;
+            else if (std::fabs(raw - lift.height) <= 0.1f) lift.height += 0.5f * (raw - lift.height), lift.skips = 0, lift.kerb = false;
+            else {
+                if (step) lift.kerb = true, lift.skips = 0;
+                if (!lift.kerb || ++lift.skips >= 30)
+                    lift.height += std::clamp(0.5f * (raw - lift.height), -0.03f, 0.03f);   // (3 cm a frame)
+            }
+            lift.raw = raw;
+            lift.measured = out.frame;
+        } else if (out.frame - lift.measured > 120) lift.height = -1;
         c.down = lift.height < -0.5f ? 0.0f : lift.height;
         if (log)
             printf("[car] frame %llu world car %06X at %.1f %.1f %.1f corners %zu raw %.3f down %.3f\n",
