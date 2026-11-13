@@ -485,7 +485,10 @@ int main(int argc, char** argv) {
     // is recognised with the mud or snow the game blends into it; texture_pack.h)
     pack.init("textures", g_opt.dump_textures ? "out/textures" : "", "save/clean_textures");
     pack.set_max_slots(renderer.texture_slots());
-    builder.set_texture_pack(&pack, &g_texture_ram);
+    // HD LIVERIES off (classic_liveries): the cars keep the ROM's own textures;
+    // the pack stays loaded so the option changes during a race (dumping keeps it on)
+    auto liveries_pack = [&]() -> TexturePack* { return g_opt.classic_liveries && !g_opt.dump_textures ? nullptr : &pack; };
+    builder.set_texture_pack(liveries_pack(), &g_texture_ram);
     // 2D replacements: the foreground (GPU slots 1-27) and the layers below the
     // 3D image (28-55; the backdrops of SkyPack use 56-63)
     Pack2D pack2d, pack2d_back;
@@ -886,6 +889,7 @@ int main(int argc, char** argv) {
                 double from = qpc_seconds();
                 builder.set_fov_widened(g_wide_applied);
                 builder.set_hide_blob_shadows(g_opt.shadows && g_opt.ray_tracing >= 1 && renderer.ray_tracing_available());
+                builder.set_texture_pack(liveries_pack(), &g_texture_ram);
                 builder.set_view_wide(g_opt.max_aspect > 4.0f / 3.0f + 0.01f ? std::max(1.0f, g_wide_view.load()) : 1.0f);
                 builder.build(*state, p->scene);
                 double built_at = qpc_seconds();
@@ -1118,6 +1122,7 @@ int main(int argc, char** argv) {
                         g_opt.classic_hud = !s.hd_hud;
                         shown = ~0ull;   // compose the 2D layer again even while the game stands still
                     }
+                    g_opt.classic_liveries = !s.hd_liveries;   // the scene builders pick it up with their next frame
                     g_opt.difficulty = s.difficulty;   // the game thread puts it in the operator settings
                     if (g_opt.interp != s.smooth) {
                         g_opt.interp = s.smooth;
@@ -1401,6 +1406,7 @@ int main(int argc, char** argv) {
                 std::lock_guard<std::mutex> lock(prep_mutex);
                 builder.set_fov_widened(g_wide_applied);
                 builder.set_hide_blob_shadows(g_opt.shadows && g_opt.ray_tracing >= 1 && renderer.ray_tracing_available());
+                builder.set_texture_pack(liveries_pack(), &g_texture_ram);
                 builder.set_view_wide(g_opt.max_aspect > 4.0f / 3.0f + 0.01f ? std::max(1.0f, g_wide_view.load()) : 1.0f);
                 builder.build(*next_state, own_scene);
                 auto images = pack.take_new_images();
