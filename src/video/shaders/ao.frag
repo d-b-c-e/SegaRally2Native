@@ -129,7 +129,10 @@ void main() {
     // Rotated per pixel (and per frame with DLAA, which averages it out)
     float noise = fract(52.9829189 * fract(dot(frag, vec2(0.06711056, 0.00583715))) + ao.misc.x);
     // Fogged surfaces lose their shading, so they lose the occlusion too
-    float fog = clamp(ao.params.w + (-p.z) * ao.params.z, 0.0, 1.0);
+    // Wheelkit (a modified version's addition): the fog's depth is the centre's, as the scene's fog has it (a side
+    // screen's own depth fogged its occlusion more, a step at each seam)
+    float fog_z = ao.light.y != 0.0 || ao.light.z != 0.0 ? ao.light.w * p.x + ao.light.y * p.z : p.z;
+    float fog = clamp(ao.params.w + (-fog_z) * ao.params.z, 0.0, 1.0);
 #ifdef RAY_TRACING
     // Wheelkit (a modified version's addition): a side screen's view space turned back into the centre's,
     // where the traced world is (light.yzw: a yaw's cos, sin and -sin; all 0 on the centre screen)
