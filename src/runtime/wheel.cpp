@@ -345,13 +345,6 @@ void wheels_removed(uint32_t id) {
     if (!wheel_is_ours(id)) return;
     close_wheel();
     printf("[wheel] disconnected\n");
-    if (!g_ok) return;
-    int n = 0;   // the best of the joysticks still plugged in takes over
-    if (SDL_JoystickID* ids = SDL_GetJoysticks(&n)) {
-        for (int i = 0; i < n; i++)
-            if (ids[i] != id) wheels_added(ids[i]);
-        SDL_free(ids);
-    }
 }
 
 void wheels_poll(bool focused) {
@@ -419,8 +412,8 @@ void wheels_poll(bool focused) {
 }
 
 void wheels_shutdown() {
-    g_ok = false;   // first: no other joystick takes over as it closes
     if (g_wheel.joy) wheels_removed(g_wheel.id);
+    g_ok = false;
 }
 
 const WheelState& wheel_state() { return g_state; }
