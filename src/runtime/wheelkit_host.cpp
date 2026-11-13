@@ -20,7 +20,7 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.4.0-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.4.1-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Its direction and this size are not judged on a wheel yet: force feedback starts off (F6 > Force feedback)
 constexpr float FORCE_SCALE = 0.4f;
@@ -32,21 +32,32 @@ unsigned g_frames = 0;
 
 // Game RAM (docs/game_ram.md)
 constexpr uint32_t SEQUENCE = 0x22D618, SELECT_STEP = 0x22435C, RACE_RESULT = 0x22D630, RACE_TIME = 0x22D080;
-constexpr uint32_t SPEED = 0x22F3A8, HUD_GEAR = 0x13AB80, HUD_LAP = 0x13AB94, HUD_POSITION = 0x13AB74;
+constexpr uint32_t SPEED = 0x22F3A8, HUD_GEAR = 0x13AB80, HUD_LAP = 0x13AB94, HUD_POSITION = 0x13AB74, TRANSMISSION = 0x224334;
 
-// The F6 panel's pages (the runtime owns the force, Steering strength, Screens and telemetry rows)
+// The F6 panel's pages (the runtime owns the force and Steering strength rows). Screens and telemetry follow the
+// rig profile Wheelkit writes into save\wheelkit.ini ([Triple] Screens, [Telemetry] Enabled): no row for them
 constexpr char PAGES[] = R"({"settings":{"product":"SEGA Rally 2","version":"%s","keys":"F6 settings, F8 force feedback off","pages":{
-"controls":[{"id":"controls.profile","kind":"status","label":"Wheel profile","text":"No profile from Wheelkit"}],
+"controls":[{"id":"controls.profile","kind":"status","label":"Wheel profile","text":"No wheel set up"}],
 "ffb":[{"id":"ffb.status","kind":"status","text":"Off"},
 {"id":"ffb.enabled","kind":"toggle","label":"Force feedback","default":false,"help":"The arcade cabinet's own force. F8 turns it off."},
 {"id":"ffb.steering","kind":"percent","label":"Steering strength","default":50,"help":"50%% is the tuned strength; 100%% doubles it."}],
-"display":[{"id":"display.status","kind":"status","label":"Now","text":"One screen"},
-{"id":"display.screens","kind":"choice","label":"Screens","apply":"next-start","choices":["Off","Surround","Separate monitors"],
-"default":"Off","help":"Three screens show one wide picture, the HUD in the middle."}],
-"telemetry":[{"id":"telemetry.enabled","kind":"toggle","label":"Telemetry","default":true,"help":"Forza Data Out for SimHub and dashboards."}],
+"display":[{"id":"display.status","kind":"status","label":"Now","text":"One screen"}],
 "help":[{"id":"help.runtime","kind":"status","label":"Wheelkit runtime","text":"not loaded"}]}}})";
 
 void WK_CALL log_line(const char* line, void*) { printf("[wheelkit] %s\n", line); }
+
+// F6 > Controls and the log: whether the wheel is set up (Wheelkit writes [Controls] from the rig profile at Play)
+void controls_status(const wk_input& s) {
+    static int shown = -1;
+    int now = !(s.flags & WK_INPUT_PROFILE) ? 0 : (s.flags & WK_INPUT_DEVICES) ? 2 : 1;
+    if (now == shown) return;
+    shown = now;
+    std::string text = now == 0 ? "No wheel set up: Wheelkit sets it from your rig profile when you press Play on SEGA Rally 2 "
+                                  "(the keyboard and gamepad work)"
+                                : std::string(p_wk_input_profile()) + (now == 1 ? ": its wheel is not connected" : "");
+    if (g_panel) p_wk_panel_set_text("controls.profile", text.c_str(), now == 2 ? WK_TONE_GOOD : WK_TONE_WARNING);
+    p_wk_log(("sega-rally-2: wheel profile: " + text).c_str());
+}
 
 int adc(float v) { return std::clamp(int(std::lround(v)), 0, 255); }
 
@@ -95,12 +106,7 @@ bool wheelkit_start() {
     char pages[sizeof PAGES + 32];
     int length = snprintf(pages, sizeof pages, PAGES, VERSION);
     g_panel = p_wk_panel_configure(pages, size_t(length)) != 0;
-    if (g_panel) {
-        const char* profile = p_wk_input_profile();
-        p_wk_panel_set_text("controls.profile", *profile ? profile : "No profile from Wheelkit: keyboard and gamepad work",
-                            *profile ? WK_TONE_GOOD : WK_TONE_WARNING);
-        p_wk_panel_set_text("help.runtime", p_wk_runtime_version(), WK_TONE_NORMAL);
-    }
+    if (g_panel) p_wk_panel_set_text("help.runtime", p_wk_runtime_version(), WK_TONE_NORMAL);
     return true;
 }
 
@@ -157,7 +163,9 @@ bool wheelkit_controls(Inputs& in, bool driving) {
     }
     wk_input s{};
     s.size = sizeof s;
-    if (!p_wk_input_poll(&s) || !(s.flags & (WK_INPUT_PROFILE | WK_INPUT_INJECTED)) || (s.flags & WK_INPUT_PANEL)) return false;
+    if (!p_wk_input_poll(&s)) return false;
+    controls_status(s);
+    if (!(s.flags & (WK_INPUT_PROFILE | WK_INPUT_INJECTED)) || (s.flags & WK_INPUT_PANEL)) return false;
     auto pressed = [&](int action) { return s.pressed[action] != 0; };
     if (!driving) {   // a menu of the port has the controls (or the window is in the background)
         static const int MENU[][2] = {{WK_ACTION_NAV_UP, VK_UP},        {WK_ACTION_NAV_DOWN, VK_DOWN},
@@ -243,10 +251,19 @@ void wheelkit_game_frame() {
     car.lap = int(rd32(HUD_LAP)) + 1;
     car.race_position = int(rd32(HUD_POSITION)) + 1;
     p_wk_telemetry_frame(&car);   // the engine speed is not found in the game's RAM yet: sent as 0
-    static int race_frames = 0;
-    if (car.race_on && race_frames++ % 600 == 0 && race_frames < 6000) {
-        snprintf(line, sizeof line, "sega-rally-2: telemetry in a race: %.1f m/s, gear %d, lap %d, position %d, %.2f s",
-                 car.speed, car.gear, car.lap, car.race_position, car.race_time);
+    // The log: the select screens' steps, and once a second for two minutes of racing what was sent and the cabinet's
+    // controls the game read (a test run reads the wheel's effect back from these lines)
+    static int step = -1, steps = 0, race_frames = 0;
+    if (int(rd32(SELECT_STEP)) != step && steps++ < 60) {
+        step = int(rd32(SELECT_STEP));
+        snprintf(line, sizeof line, "sega-rally-2: select step %d, transmission %s", step, rd32(TRANSMISSION) ? "MT" : "AT");
+        p_wk_log(line);
+    }
+    if (car.race_on && race_frames++ % 60 == 0 && race_frames < 60 * 120) {
+        snprintf(line, sizeof line, "sega-rally-2: telemetry in a race: %.1f m/s, gear %d, lap %d, position %d, %.2f s; "
+                 "cabinet steer %d accel %d brake %d lever %d",
+                 car.speed, car.gear, car.lap, car.race_position, car.race_time, int(g_inputs.steer), int(g_inputs.accel),
+                 int(g_inputs.brake), int(g_inputs.gear));
         p_wk_log(line);
     }
 }
