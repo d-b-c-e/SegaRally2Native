@@ -16,6 +16,7 @@
 #include "wheelkit_model3.h"
 #include "proxy/dbce_proxy_side_black.hpp"   // the runtime's black side screens (header only)
 #include "frames/frame_burst.hpp"            // the runtime's frame bursts (header only)
+#include "triples/triple_views_vulkan.hpp"   // the runtime's views in a Vulkan renderer's form (header only)
 #include <cstdarg>
 #include <cstring>
 #include <vector>
@@ -170,9 +171,8 @@ int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7]
     if (now - g_world_at.load() > 250) g_world_since = now;
     g_world_at = now;
     if (!g_three) return 0;
-    const double n = 0.1, f = 10000.0;
-    double c[16] = {};
-    c[0] = p[0] / widen, c[5] = std::fabs(p[5]), c[10] = f / (n - f), c[11] = -1, c[14] = n * f / (n - f);
+    double c[16];
+    wheelkit::triples::CentredFromVulkan(p, widen, c);   // the runtime's triples/triple_views_vulkan.hpp
     wk_triple_views tv{};
     tv.size = sizeof tv;
     if (!p_wk_triples_views(c, &tv)) return 0;
@@ -184,33 +184,13 @@ int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7]
         p_wk_log(line);
     }
     const int count = g_racing ? 3 : 1;   // 1: the centre screen alone (views[1]), the sides black
-    for (int s = 0; s < 3; s++) {
-        double m[16];
-        for (int r = 0; r < 4; r++)
-            for (int k = 0; k < 4; k++) {
-                m[r * 4 + k] = 0;
-                for (int j = 0; j < 4; j++) m[r * 4 + k] += tv.rotation[s][r * 4 + j] * tv.projection[s][j * 4 + k];
-            }
-        for (int r = 0; r < 4; r++) {   // row k of the clip position is m[r * 4 + k] over r
-            out[s][r * 4 + 0] = float(m[r * 4 + 0] - p[8] / widen * m[r * 4 + 3]);   // the game's own shear, as at the centre
-            out[s][r * 4 + 1] = float(-m[r * 4 + 1] - p[9] * m[r * 4 + 3]);   // y down
-            out[s][r * 4 + 2] = r == 3 ? p[14] : 0.0f;                        // depth: near / -z, as the game's
-            out[s][r * 4 + 3] = float(m[r * 4 + 3]);
-        }
-        if (!ao) continue;   // the screen's own projection (x and y scale and offset) and the yaw back to the centre's view
-        const double* q = tv.projection[s];
-        const double* rot = tv.rotation[s];
-        float a[7] = {float(q[0]), float(-q[5]), float(q[8] + p[8] / widen), float(-q[9] + p[9]), float(rot[0]), float(rot[2]), float(rot[8])};
-        if (s == 1) a[4] = a[5] = a[6] = 0;   // the centre: no turn
-        for (int i = 0; i < 7; i++) ao[s][i] = a[i];
-    }
+    wheelkit::triples::VulkanViews(p, widen, tv.rotation, tv.projection, out, ao);
     return count;
 }
 bool wheelkit_three_screens() { return g_three; }
 
 // Frame bursts: %LOCALAPPDATA%\Wheelkit\sega-rally-2\frames.txt asks for one (a fenced test run or the developer switch)
-static wheelkit::frames::Burst g_burst;
-static unsigned g_burst_index = 0;
+static wheelkit::frames::HostBurst g_burst;
 static void burst_log(const char* fmt, ...) {
     char line[600];
     va_list a;
@@ -220,30 +200,12 @@ static void burst_log(const char* fmt, ...) {
     p_wk_log(line);
 }
 bool wheelkit_frames_poll() {
-    if (!g_on) return false;
-    if (!g_burst.Active()) {
-        char folder[MAX_PATH];
-        DWORD n = GetEnvironmentVariableA("LOCALAPPDATA", folder, MAX_PATH - 40);
-        if (!n || n >= MAX_PATH - 40) return false;
-        strcat_s(folder, "\\Wheelkit\\sega-rally-2\\");
-        wk_ffb_status st{};
-        st.size = sizeof st;
-        g_burst.Poll(folder, p_wk_ffb_get_status(&st) && st.state == WK_FFB_FENCED, burst_log);
-        g_burst_index = 0;
-    }
-    return g_burst.Active();
+    wk_ffb_status st{};
+    st.size = sizeof st;
+    return g_on && g_burst.Poll("sega-rally-2", p_wk_ffb_get_status(&st) && st.state == WK_FFB_FENCED, burst_log);
 }
 void wheelkit_frames_add(const unsigned char* bgra, unsigned width, unsigned height, size_t pitch) {
-    static std::vector<unsigned char> small;
-    const unsigned s = unsigned(g_burst.scale), w = width / s, h = height / s;
-    if (s > 1) {   // every s-th pixel of every s-th row
-        small.resize(size_t(w) * h * 4);
-        for (unsigned y = 0; y < h; y++)
-            for (unsigned x = 0; x < w; x++) memcpy(&small[(size_t(y) * w + x) * 4], bgra + size_t(y) * s * pitch + size_t(x) * s * 4, 4);
-        bgra = small.data(), pitch = size_t(w) * 4;
-    }
-    g_burst.Add(g_burst_index++, bgra, w, h, pitch, g_frames, g_burst.ElapsedMs(), g_racing ? 3 : 1);
-    if (int(g_burst_index) >= g_burst.wanted) g_burst.Finish(burst_log);
+    g_burst.Add(bgra, width, height, pitch, g_frames, g_racing ? 3 : 1, burst_log);
 }
 
 // The camera's heading over the ground: its forward axis (view -z) in the world's x and z. The game's own heading is not
