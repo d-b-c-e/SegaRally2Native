@@ -26,7 +26,7 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.5.5-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.5.6-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Set against art of rally's held corner at turn-in (0.22 to 0.25): at 0.4 SEGA Rally 2's read 0.13 to 0.17 (2026-11-14)
 constexpr float FORCE_SCALE = 0.6f;
@@ -361,11 +361,15 @@ void wheelkit_game_frame() {
     }
     wk_car car{};
     car.size = sizeof car;
-    // The race once the world has been on screen for 1.5 s: not during the course's title card (2D, about 5 s), nor the
-    // second of the course before it (the drive board's first command there reached 0.041 at 0.6)
+    // The race once the world is back after the course's title card (2D, about 5 s): not the card, nor the second of the
+    // course before it (the drive board's first command there reached 0.041 at 0.6); 10 s after the last select step at most
     const unsigned long long now = GetTickCount64();
-    car.race_on = int(rd32(SEQUENCE)) == 1 && rd32(SELECT_STEP) == 17 && rd32(RACE_RESULT) <= 1 && now - g_world_at.load() < 250 &&
-                  now - g_world_since.load() >= 1500;
+    static unsigned long long step17_at = 0;
+    const bool last_step = rd32(SELECT_STEP) == 17;
+    if (!last_step) step17_at = 0;
+    else if (!step17_at) step17_at = now;
+    car.race_on = int(rd32(SEQUENCE)) == 1 && last_step && rd32(RACE_RESULT) <= 1 && now - g_world_at.load() < 250 &&
+                  (g_world_since.load() > step17_at || now - step17_at > 10000);
     float speed = std::bit_cast<float>(rd32(SPEED));
     car.speed = std::isfinite(speed) ? speed : 0.0f;
     // Manual: the cabinet's shifter as the game reads it (0 neutral, as its HUD's N); HUD_GEAR keeps 1 in neutral
