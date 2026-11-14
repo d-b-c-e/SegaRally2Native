@@ -1361,13 +1361,22 @@ void R3DRenderer::record_uploads(const Frame& f) {
             // gets by distance is then the same over all of it (its nearer edge panels were a darker band at 63 degrees).
             // The copies a tenth of the arc overlapping and a little farther, under the original where they overlap
             auto onto = [&](float* q, float r) { const float l = len(q); if (l > 0) q[0] *= r / l, q[1] *= r / l, q[2] *= r / l; };
+            // The triangles of the sky's outer 8 degrees (a darker band where the game never looks) go behind the others,
+            // so where a copy overlaps, its middle covers the band
+            sky_far_.assign(sky_tris_.size(), 1.0f);
+            for (size_t n = 0; n < sky_tris_.size(); n++)
+                for (int k = 0; k < 3; k++) {
+                    const float yaw = std::atan2(vs[sky_tris_[n] + k].pos[0], -vs[sky_tris_[n] + k].pos[2]);
+                    if (yaw < lo + 0.14f || yaw > hi - 0.14f) sky_far_[n] = 1.1f;
+                }
             for (float turn : {0.9f * arc, -0.9f * arc}) {
                 const float c = std::cos(turn), s = std::sin(turn);
                 auto spin = [&](float* q) { const float x = q[0], z = q[2]; q[0] = c * x - s * z, q[2] = s * x + c * z; };
-                for (uint32_t t : sky_tris_)
+                for (size_t n = 0; n < sky_tris_.size(); n++)
                     for (int k = 0; k < 3; k++) {
-                        R3DVertex x = vs[t + k];
-                        spin(x.pos), spin(x.nrm), spin(x.prev), onto(x.pos, SKY_RADIUS * 1.05f), onto(x.prev, SKY_RADIUS * 1.05f);
+                        R3DVertex x = vs[sky_tris_[n] + k];
+                        const float r = SKY_RADIUS * 1.05f * sky_far_[n];
+                        spin(x.pos), spin(x.nrm), spin(x.prev), onto(x.pos, r), onto(x.prev, r);
                         sky_copies_.push_back(x);
                     }
             }
@@ -1379,12 +1388,13 @@ void R3DRenderer::record_uploads(const Frame& f) {
         create_buffer(vertices_, total * sizeof(R3DVertex) * 2, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     }
     if (vcount) memcpy(vertices_.mapped, scene_->vertices.data(), vcount * sizeof(R3DVertex));
-    for (uint32_t t : sky_tris_)   // Wheelkit: the original sky at one distance too (above)
+    for (size_t n = 0; n < sky_tris_.size(); n++)   // Wheelkit: the original sky at one distance too (above)
         for (int k = 0; k < 3; k++) {
-            R3DVertex& x = static_cast<R3DVertex*>(vertices_.mapped)[t + k];
+            R3DVertex& x = static_cast<R3DVertex*>(vertices_.mapped)[sky_tris_[n] + k];
+            const float sky_r = SKY_RADIUS * sky_far_[n];
             for (float* q : {x.pos, x.prev}) {
                 const float l = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
-                if (l > 0) q[0] *= SKY_RADIUS / l, q[1] *= SKY_RADIUS / l, q[2] *= SKY_RADIUS / l;
+                if (l > 0) q[0] *= sky_r / l, q[1] *= sky_r / l, q[2] *= sky_r / l;
             }
         }
     if (!sky_copies_.empty())
