@@ -1361,13 +1361,21 @@ void R3DRenderer::record_uploads(const Frame& f) {
             // gets by distance is then the same over all of it (its nearer edge panels were a darker band at 63 degrees).
             // The copies a tenth of the arc overlapping and a little farther, under the original where they overlap
             auto onto = [&](float* q, float r) { const float l = len(q); if (l > 0) q[0] *= r / l, q[1] *= r / l, q[2] *= r / l; };
+            // One normal for all of it, that of the triangle nearest straight ahead: the game lights its sky, and the
+            // triangles of its edges (never in its own view) faced away and came out darker, a band at 63 degrees
+            float best = 1e9f;
+            for (uint32_t t : sky_tris_) {
+                const float yaw = std::fabs(std::atan2(vs[t].pos[0], -vs[t].pos[2]));
+                if (yaw < best) best = yaw, sky_normal_[0] = vs[t].nrm[0], sky_normal_[1] = vs[t].nrm[1], sky_normal_[2] = vs[t].nrm[2];
+            }
             for (float turn : {0.9f * arc, -0.9f * arc}) {
                 const float c = std::cos(turn), s = std::sin(turn);
                 auto spin = [&](float* q) { const float x = q[0], z = q[2]; q[0] = c * x - s * z, q[2] = s * x + c * z; };
                 for (uint32_t t : sky_tris_)
                     for (int k = 0; k < 3; k++) {
                         R3DVertex x = vs[t + k];
-                        spin(x.pos), spin(x.nrm), spin(x.prev), onto(x.pos, SKY_RADIUS * 1.05f), onto(x.prev, SKY_RADIUS * 1.05f);
+                        spin(x.pos), spin(x.prev), onto(x.pos, SKY_RADIUS * 1.05f), onto(x.prev, SKY_RADIUS * 1.05f);
+                        x.nrm[0] = sky_normal_[0], x.nrm[1] = sky_normal_[1], x.nrm[2] = sky_normal_[2];
                         sky_copies_.push_back(x);
                     }
             }
@@ -1382,6 +1390,7 @@ void R3DRenderer::record_uploads(const Frame& f) {
     for (uint32_t t : sky_tris_)   // Wheelkit: the original sky at one distance too (above)
         for (int k = 0; k < 3; k++) {
             R3DVertex& x = static_cast<R3DVertex*>(vertices_.mapped)[t + k];
+            x.nrm[0] = sky_normal_[0], x.nrm[1] = sky_normal_[1], x.nrm[2] = sky_normal_[2];
             for (float* q : {x.pos, x.prev}) {
                 const float l = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
                 if (l > 0) q[0] *= SKY_RADIUS / l, q[1] *= SKY_RADIUS / l, q[2] *= SKY_RADIUS / l;
