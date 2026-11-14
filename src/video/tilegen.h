@@ -17,7 +17,8 @@ constexpr int SCREEN_W = 496, SCREEN_H = 384;
 // The layers below the 3D image (the sky) are also drawn beyond both sides of
 // the screen for widescreen: the tilemaps wrap every 512 pixels, so the extra
 // columns continue the background as the game scrolls it.
-constexpr int BACK_MARGIN = 200, BACK_W = SCREEN_W + 2 * BACK_MARGIN;
+// (Wheelkit, a modified version's addition: 760, so three 16:9 screens side by side are covered, not 200)
+constexpr int BACK_MARGIN = 760, BACK_W = SCREEN_W + 2 * BACK_MARGIN;
 constexpr uint32_t TILEGEN_BASE = 0xF1000000, TILEGEN_SIZE = 0x190000;
 
 class TileGen {
