@@ -25,9 +25,16 @@ void main() {
     // and rows of the block counts the same (the outer two of the five, half)
     vec3 bounce = vec3(0.0);
     float bounce_weight = 0.0;
+    // Wheelkit (a modified version's addition): with three views (rect: one screen's third) the texels around stay on
+    // this pixel's screen, whose occlusion was traced with its own projection
+    ivec2 lo = ivec2(0), hi = size - 1;
+    if (ao.rect.z * 2.5 < float(full.x)) {
+        int s = int(frag.x / ao.rect.z);
+        lo.x = int(ceil(float(s) * ao.rect.z / 2.0)), hi.x = min(hi.x, int(ceil(float(s + 1) * ao.rect.z / 2.0)) - 1);
+    }
     for (int y = -2; y <= 2; y++)
         for (int x = -2; x <= 2; x++) {
-            ivec2 q = clamp(centre + ivec2(x, y), ivec2(0), size - 1);
+            ivec2 q = clamp(centre + ivec2(x, y), lo, hi);
             float dq = texelFetch(depth_tex, min(q * 2, full - 1), 0).r;   // where that texel was taken
             if (dq <= 0.0) continue;
             // a surface seen at a slant (a board along the road) changes depth

@@ -183,7 +183,9 @@ void main() {
         float horizon = 0.0;
         for (int s = 0; s < STEPS; s++) {
             float t = (float(s) + 0.5 + 0.5 * fract(noise * 3.7 + float(s) * 0.618)) / float(STEPS) * radius_px;
-            vec3 q = ao_view_pos(frag + dir * t);
+            vec2 at = frag + dir * t;
+            if (ao_other_screen(at.x)) continue;   // Wheelkit: another screen's depth is another projection's
+            vec3 q = ao_view_pos(at);
             if (q.z >= 0.0) continue;
             vec3 h = q - p;
             float d2 = dot(h, h);

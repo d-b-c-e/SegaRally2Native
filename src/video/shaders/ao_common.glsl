@@ -17,6 +17,12 @@ layout(push_constant) uniform AmbientOcclusion {
 
 const float AO_NEAR = 1e-3;   // r3d_scene.cpp projection
 
+// Wheelkit (a modified version's addition): with three views `rect` is one screen's third of the target, and a pixel
+// of another screen was drawn with that screen's projection: true when the full-size column x is on another screen
+bool ao_other_screen(float x) {
+    return ao.rect.z * 2.5 < float(textureSize(depth_tex, 0).x) && (x < ao.rect.x - 0.5 || x >= ao.rect.x + ao.rect.z - 0.5);
+}
+
 // View-space position of the surface at a target pixel; z >= 0: no surface
 vec3 ao_view_pos(vec2 frag) {
     float d = texelFetch(depth_tex, ivec2(frag), 0).r;
