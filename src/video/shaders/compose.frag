@@ -445,6 +445,11 @@ void main() {
         vec4 pictures = replacement_pictures(vec4(c, 1.0), pic_pos, false);
         c = pictures.rgb;
         c = c * (1.0 - front.a) + front.rgb;
+        if (pc.motion.y > 0.5) {   // (experiment, LW_COMPOSE_DEBUG: 1 backdrop, 2 foreground over blue, 3 diffusion, 4 3D)
+            int m = int(pc.motion.y + 0.5);
+            c = m == 1 ? back.rgb : m == 2 ? mix(vec3(0.0, 0.0, 0.3), front.rgb / max(front.a, 1e-4), front.a)
+              : m == 3 ? texture(diffusion, p).rgb : s.rgb;
+        }
     }
     // Picture settings from the menu: saturation, then gamma
     float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
