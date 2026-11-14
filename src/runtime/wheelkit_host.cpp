@@ -26,7 +26,7 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.5.7-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.5.8-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Set against art of rally's held corner at turn-in (0.22 to 0.25): at 0.4 SEGA Rally 2's read 0.13 to 0.17 (2026-11-14)
 constexpr float FORCE_SCALE = 0.6f;
@@ -374,12 +374,17 @@ void wheelkit_game_frame() {
                   (g_world_since.load() > step17_at || now - step17_at > 10000);
     float speed = std::bit_cast<float>(rd32(SPEED));
     car.speed = std::isfinite(speed) ? speed : 0.0f;
-    // The transmission screen (select step 12): Manual when the rig profile shifts by hand (H pattern or sequential),
-    // so the player does not pick it every race; Automatic profiles (none named) leave the game's choice
-    if (rd32(SELECT_STEP) == 12 && g_profile_box.load() != WK_TRANSMISSION_UNKNOWN && rd32(TRANSMISSION) == 0) {
-        wr32(TRANSMISSION, 1);
-        static int said = 0;   // (the game may set it back each frame while its cursor is on Automatic: said 3 times)
-        if (said++ < 3) p_wk_log("sega-rally-2: the transmission set to Manual, as the rig profile shifts");
+    // The transmission screen (select step 12) as the rig profile shifts: Manual for an H pattern or sequential profile,
+    // Automatic for an automatic one, so the player does not pick it every race; a profile without one leaves the game's
+    const int box = g_profile_box.load();
+    if (rd32(SELECT_STEP) == 12 && box != WK_TRANSMISSION_UNKNOWN) {
+        const uint32_t want = box == WK_TRANSMISSION_AUTOMATIC ? 0 : 1;
+        if (rd32(TRANSMISSION) != want) {
+            wr32(TRANSMISSION, want);
+            static int said = 0;
+            if (said++ < 3) p_wk_log(want ? "sega-rally-2: the transmission set to Manual, as the rig profile shifts"
+                                          : "sega-rally-2: the transmission set to Automatic, as the rig profile is automatic");
+        }
     }
     // Manual: the cabinet's shifter as the game reads it (0 neutral, as its HUD's N); HUD_GEAR keeps 1 in neutral
     car.gear = std::clamp(rd32(TRANSMISSION) ? int(g_inputs.gear) : int(rd32(HUD_GEAR)), 0, 4);
