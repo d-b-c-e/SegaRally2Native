@@ -1354,13 +1354,16 @@ void R3DRenderer::record_uploads(const Frame& f) {
             }
             const float arc = hi - lo;
             if (sky.empty() || arc <= 0.3f || arc >= 3.1f) break;
-            for (float turn : {arc, -arc}) {
+            // A tenth of the arc overlapping and a little farther away: the panels' edges fade out (into the 2D backdrop,
+            // not drawn beside the 4:3 area), so the copy behind shows through the original's fading edge, not black
+            for (float turn : {0.9f * arc, -0.9f * arc}) {
                 const float c = std::cos(turn), s = std::sin(turn);
                 auto spin = [&](float* q) { const float x = q[0], z = q[2]; q[0] = c * x - s * z, q[2] = s * x + c * z; };
+                auto away = [](float* q) { q[0] *= 1.05f, q[1] *= 1.05f, q[2] *= 1.05f; };
                 for (uint32_t t : sky)
                     for (int k = 0; k < 3; k++) {
                         R3DVertex x = vs[t + k];
-                        spin(x.pos), spin(x.nrm), spin(x.prev);
+                        spin(x.pos), spin(x.nrm), spin(x.prev), away(x.pos), away(x.prev);
                         sky_copies_.push_back(x);
                     }
             }
