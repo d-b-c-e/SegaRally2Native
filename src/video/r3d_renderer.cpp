@@ -1333,49 +1333,60 @@ void R3DRenderer::record_uploads(const Frame& f) {
     // enough for its own view; on three screens they are drawn again turned left and right by the arc they cover, so the
     // side screens show the same sky instead of its end (decision 0069)
     sky_copies_.clear();
+    sky_tris_.clear();
     if (wheelkit_three_screens() && scene_)
         for (const R3DViewport& v : scene_->viewports) {
             if (!v.world) continue;
             const std::vector<R3DVertex>& vs = scene_->vertices;
+            const uint32_t end = std::min<uint32_t>(v.opaque_first + v.opaque_count, uint32_t(vs.size()));
+            auto len = [](const float* p) { return std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]); };
+            // The sky's texture: that of the triangles wholly beyond SKY_NEAREST; then every triangle in it is the sky
+            std::vector<uint32_t> texes;
+            for (uint32_t t = v.opaque_first; t + 2 < end; t += 3)
+                if (len(vs[t].pos) > SKY_NEAREST && len(vs[t + 1].pos) > SKY_NEAREST && len(vs[t + 2].pos) > SKY_NEAREST &&
+                    std::find(texes.begin(), texes.end(), vs[t].tex) == texes.end())
+                    texes.push_back(vs[t].tex);
             float lo = 1e9f, hi = -1e9f;
-            std::vector<uint32_t> sky;
-            for (uint32_t t = v.opaque_first; t + 2 < v.opaque_first + v.opaque_count && t + 2 < vs.size(); t += 3) {
-                bool distant = true;
+            for (uint32_t t = v.opaque_first; t + 2 < end; t += 3) {
+                if (std::find(texes.begin(), texes.end(), vs[t].tex) == texes.end()) continue;
+                sky_tris_.push_back(t);
                 for (int k = 0; k < 3; k++) {
-                    const float* p = vs[t + k].pos;
-                    distant = distant && p[0] * p[0] + p[1] * p[1] + p[2] * p[2] > SKY_NEAREST * SKY_NEAREST;
-                }
-                if (!distant) continue;
-                sky.push_back(t);
-                for (int k = 0; k < 3; k++) {
-                    float yaw = std::atan2(vs[t + k].pos[0], -vs[t + k].pos[2]);
+                    const float yaw = std::atan2(vs[t + k].pos[0], -vs[t + k].pos[2]);
                     lo = std::min(lo, yaw), hi = std::max(hi, yaw);
                 }
             }
             const float arc = hi - lo;
-            if (sky.empty() || arc <= 0.3f || arc >= 3.1f) break;
-            // A tenth of the arc overlapping and a little farther away: the panels' edges fade out (into the 2D backdrop,
-            // not drawn beside the 4:3 area), so the copy behind shows through the original's fading edge, not black
+            if (sky_tris_.empty() || arc <= 0.3f || arc >= 3.1f) { sky_tris_.clear(); break; }
+            // Every corner at one distance (its direction kept, so it lands on the same pixel): the haze the game's sky
+            // gets by distance is then the same over all of it (its nearer edge panels were a darker band at 63 degrees).
+            // The copies a tenth of the arc overlapping and a little farther, under the original where they overlap
+            auto onto = [&](float* q, float r) { const float l = len(q); if (l > 0) q[0] *= r / l, q[1] *= r / l, q[2] *= r / l; };
             for (float turn : {0.9f * arc, -0.9f * arc}) {
                 const float c = std::cos(turn), s = std::sin(turn);
                 auto spin = [&](float* q) { const float x = q[0], z = q[2]; q[0] = c * x - s * z, q[2] = s * x + c * z; };
-                auto away = [](float* q) { q[0] *= 1.05f, q[1] *= 1.05f, q[2] *= 1.05f; };
-                for (uint32_t t : sky)
+                for (uint32_t t : sky_tris_)
                     for (int k = 0; k < 3; k++) {
                         R3DVertex x = vs[t + k];
-                        spin(x.pos), spin(x.nrm), spin(x.prev), away(x.pos), away(x.prev);
+                        spin(x.pos), spin(x.nrm), spin(x.prev), onto(x.pos, SKY_RADIUS * 1.05f), onto(x.prev, SKY_RADIUS * 1.05f);
                         sky_copies_.push_back(x);
                     }
             }
             break;
-        }
-    size_t total = vcount + sky_copies_.size();
+        }    size_t total = vcount + sky_copies_.size();
     if (total * sizeof(R3DVertex) > vertices_.size) {
         vkDeviceWaitIdle(dev_);
         destroy_buffer(vertices_);
         create_buffer(vertices_, total * sizeof(R3DVertex) * 2, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     }
     if (vcount) memcpy(vertices_.mapped, scene_->vertices.data(), vcount * sizeof(R3DVertex));
+    for (uint32_t t : sky_tris_)   // Wheelkit: the original sky at one distance too (above)
+        for (int k = 0; k < 3; k++) {
+            R3DVertex& x = static_cast<R3DVertex*>(vertices_.mapped)[t + k];
+            for (float* q : {x.pos, x.prev}) {
+                const float l = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
+                if (l > 0) q[0] *= SKY_RADIUS / l, q[1] *= SKY_RADIUS / l, q[2] *= SKY_RADIUS / l;
+            }
+        }
     if (!sky_copies_.empty())
         memcpy(static_cast<R3DVertex*>(vertices_.mapped) + vcount, sky_copies_.data(), sky_copies_.size() * sizeof(R3DVertex));
 }

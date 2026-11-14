@@ -232,7 +232,9 @@ private:
     bool shadow_frame_ = false;        // the shadow map is drawn this frame
     bool three_drawn_ = false;         // Wheelkit (a modified version's addition): the world drawn on three screens this frame
     std::vector<R3DVertex> sky_copies_;   // Wheelkit: the game's sky panels turned left and right (record_uploads)
-    static constexpr float SKY_NEAREST = 1200.0f;   // a sky panel's every corner is farther than this (Desert's: 1,550 up)
+    std::vector<uint32_t> sky_tris_;      // Wheelkit: the game's sky triangles this frame (first vertex of each)
+    static constexpr float SKY_NEAREST = 1200.0f;   // the sky's texture is found on triangles wholly beyond this (Desert's: 1,550 up)
+    static constexpr float SKY_RADIUS = 3500.0f;    // where the sky's corners are put (Desert's reach 1,040 to 3,700)
     VkPipeline shadow_ = VK_NULL_HANDLE;
     R3DRayTracer rt_;
     int ray_tracing_ = 2;
