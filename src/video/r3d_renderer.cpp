@@ -1854,7 +1854,7 @@ R3DRenderer::ComposePush R3DRenderer::compose_push(const Frame& f) const {
                    .sky = {0, 0, 0, sr2_between_screens() ? 4.0f : 0.0f},
                    .effects = {bloom_strength_, saturation_, gamma_, 0},
                    // w: the race HUD's splits, in 2-pixel steps, one per byte (top left, top right, bottom)
-                   .motion = {back_shift_, getenv("LW_COMPOSE_DEBUG") ? float(atoi(getenv("LW_COMPOSE_DEBUG"))) : 0.0f, 0,
+                   .motion = {back_shift_, 0, 0,
                               sr2_on ? float(sr2_split_[0] / 2 | (sr2_split_[1] / 2) << 8 | (sr2_split_[2] / 2) << 16)
                                      : 0.0f}};
     return pc;
