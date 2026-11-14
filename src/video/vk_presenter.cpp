@@ -492,8 +492,12 @@ void VkPresenter::frame(const RecordFn& record) {
         vkGetBufferMemoryRequirements(device_, capture_buffer_, &req);
         VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
         mai.allocationSize = req.size;
+        // cached where there is such memory: reading uncached memory back pixel by pixel held frame bursts to 15 a second
         mai.memoryTypeIndex = find_memory(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+                                                                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT);
+        if (mai.memoryTypeIndex == UINT32_MAX)
+            mai.memoryTypeIndex = find_memory(req.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
         vkAllocateMemory(device_, &mai, nullptr, &capture_memory_);
         vkBindBufferMemory(device_, capture_buffer_, capture_memory_, 0);
     }
