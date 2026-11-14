@@ -61,6 +61,8 @@ public:
     void run_once(const std::function<void(VkCommandBuffer)>& fn);
     // Saves the next presented frame as a BMP file
     void capture_next(const std::string& path) { capture_path_ = path; }
+    // Wheelkit (a modified version's addition): every image read back into n (BGRA rows) while set (frame bursts)
+    void read_back(void (*fn)(const unsigned char*, unsigned, unsigned, size_t)) { read_back_ = fn; }
 
     // Where the time of frame() goes, in seconds, summed since the last take_timing():
     // gpu_wait: waiting for the previous frame's GPU work and for a swapchain image;
@@ -125,6 +127,8 @@ private:
     VkFence fence_ = VK_NULL_HANDLE;
 
     std::string capture_path_;
+    void (*read_back_)(const unsigned char*, unsigned, unsigned, size_t) = nullptr;
+    VkDeviceSize capture_size_ = 0;
     Timing timing_;
     LastFrame last_;
     bool present_wait_ = false;

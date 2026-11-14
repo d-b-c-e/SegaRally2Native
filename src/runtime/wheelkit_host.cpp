@@ -15,6 +15,10 @@
 #include "wheelkit.h"
 #include "wheelkit_model3.h"
 #include "proxy/dbce_proxy_side_black.hpp"   // the runtime's black side screens (header only)
+#include "frames/frame_burst.hpp"            // the runtime's frame bursts (header only)
+#include <cstdarg>
+#include <cstring>
+#include <vector>
 
 namespace {
 
@@ -199,6 +203,44 @@ int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7]
     return count;
 }
 bool wheelkit_three_screens() { return g_three; }
+
+// Frame bursts: %LOCALAPPDATA%\Wheelkit\sega-rally-2\frames.txt asks for one (a fenced test run or the developer switch)
+static wheelkit::frames::Burst g_burst;
+static unsigned g_burst_index = 0;
+static void burst_log(const char* fmt, ...) {
+    char line[600];
+    va_list a;
+    va_start(a, fmt);
+    vsnprintf(line, sizeof line, fmt, a);
+    va_end(a);
+    p_wk_log(line);
+}
+bool wheelkit_frames_poll() {
+    if (!g_on) return false;
+    if (!g_burst.Active()) {
+        char folder[MAX_PATH];
+        DWORD n = GetEnvironmentVariableA("LOCALAPPDATA", folder, MAX_PATH - 40);
+        if (!n || n >= MAX_PATH - 40) return false;
+        strcat_s(folder, "\\Wheelkit\\sega-rally-2\\");
+        wk_ffb_status st{};
+        st.size = sizeof st;
+        g_burst.Poll(folder, p_wk_ffb_get_status(&st) && st.state == WK_FFB_FENCED, burst_log);
+        g_burst_index = 0;
+    }
+    return g_burst.Active();
+}
+void wheelkit_frames_add(const unsigned char* bgra, unsigned width, unsigned height, size_t pitch) {
+    static std::vector<unsigned char> small;
+    const unsigned s = unsigned(g_burst.scale), w = width / s, h = height / s;
+    if (s > 1) {   // every s-th pixel of every s-th row
+        small.resize(size_t(w) * h * 4);
+        for (unsigned y = 0; y < h; y++)
+            for (unsigned x = 0; x < w; x++) memcpy(&small[(size_t(y) * w + x) * 4], bgra + size_t(y) * s * pitch + size_t(x) * s * 4, 4);
+        bgra = small.data(), pitch = size_t(w) * 4;
+    }
+    g_burst.Add(g_burst_index++, bgra, w, h, pitch, g_frames, g_burst.ElapsedMs(), g_racing ? 3 : 1);
+    if (int(g_burst_index) >= g_burst.wanted) g_burst.Finish(burst_log);
+}
 
 // The camera's heading over the ground: its forward axis (view -z) in the world's x and z. The game's own heading is not
 // in its known RAM; the camera rides with the car, so it turns with it

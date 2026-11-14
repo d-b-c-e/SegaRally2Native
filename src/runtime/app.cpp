@@ -1579,6 +1579,7 @@ int main(int argc, char** argv) {
             snprintf(path, sizeof(path), "out/film_out/%04zu.bmp", film_pos);
             presenter.capture_next(path);
         }
+        presenter.read_back(wheelkit_frames_poll() ? wheelkit_frames_add : nullptr);   // Wheelkit: frame bursts
         presenter.frame([&](VkCommandBuffer cmd, VkImageView view, VkExtent2D extent) {
             renderer.record(cmd, view, extent);
             ui.record(cmd, view, extent);

@@ -465,15 +465,20 @@ void VkPresenter::frame(const RecordFn& record) {
     vk_image_barrier(cmd_, images_[index], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     record(cmd_, views_[index], extent_);
     double t2 = seconds();
-    bool capture = !capture_path_.empty();
+    bool capture = !capture_path_.empty() || read_back_;
+    const VkDeviceSize capture_size = VkDeviceSize(extent_.width) * extent_.height * 4;
     if (capture) {
-        // Copy the finished image to a host-visible buffer
-        if (capture_buffer_) {
+        // Copy the finished image to a host-visible buffer (kept while its size stays: frame bursts read every image)
+        if (capture_buffer_ && capture_size_ != capture_size) {
             vkDestroyBuffer(device_, capture_buffer_, nullptr);
             vkFreeMemory(device_, capture_memory_, nullptr);
+            capture_buffer_ = VK_NULL_HANDLE;
         }
+    }
+    if (capture && !capture_buffer_) {
+        capture_size_ = capture_size;
         VkBufferCreateInfo bci{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bci.size = VkDeviceSize(extent_.width) * extent_.height * 4;
+        bci.size = capture_size;
         bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         vkCreateBuffer(device_, &bci, nullptr, &capture_buffer_);
         VkMemoryRequirements req;
@@ -484,6 +489,8 @@ void VkPresenter::frame(const RecordFn& record) {
                                                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
         vkAllocateMemory(device_, &mai, nullptr, &capture_memory_);
         vkBindBufferMemory(device_, capture_buffer_, capture_memory_, 0);
+    }
+    if (capture) {
         vk_image_barrier(cmd_, images_[index], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
         VkBufferImageCopy c{};
@@ -534,6 +541,8 @@ void VkPresenter::frame(const RecordFn& record) {
         vkWaitForFences(device_, 1, &fence_, VK_TRUE, UINT64_MAX);
         void* data = nullptr;
         vkMapMemory(device_, capture_memory_, 0, VK_WHOLE_SIZE, 0, &data);
+        if (read_back_) read_back_(static_cast<const unsigned char*>(data), extent_.width, extent_.height, size_t(extent_.width) * 4);
+        if (!capture_path_.empty())
         if (FILE* f = fopen(capture_path_.c_str(), "wb")) {
             BITMAPFILEHEADER fh{};
             BITMAPINFOHEADER ih{};
