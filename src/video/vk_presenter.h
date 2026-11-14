@@ -129,6 +129,8 @@ private:
     std::string capture_path_;
     void (*read_back_)(const unsigned char*, unsigned, unsigned, size_t) = nullptr;
     VkDeviceSize capture_size_ = 0;
+    bool read_back_pending_ = false;   // the last image was copied for read_back_ (read at the next image's start)
+    unsigned read_back_w_ = 0, read_back_h_ = 0;
     Timing timing_;
     LastFrame last_;
     bool present_wait_ = false;

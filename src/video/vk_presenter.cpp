@@ -451,6 +451,13 @@ void VkPresenter::frame(const RecordFn& record) {
 
     double t0 = seconds();
     vkWaitForFences(device_, 1, &fence_, VK_TRUE, UINT64_MAX);
+    if (read_back_pending_) {   // the previous image's copy is done: read back here, with no wait of its own
+        read_back_pending_ = false;
+        void* data = nullptr;
+        vkMapMemory(device_, capture_memory_, 0, VK_WHOLE_SIZE, 0, &data);
+        if (read_back_) read_back_(static_cast<const unsigned char*>(data), read_back_w_, read_back_h_, size_t(read_back_w_) * 4);
+        vkUnmapMemory(device_, capture_memory_);
+    }
     double t_fence = seconds();
     uint32_t index = 0;
     VkResult r = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, acquired_, VK_NULL_HANDLE, &index);
@@ -537,12 +544,13 @@ void VkPresenter::frame(const RecordFn& record) {
     timing_.present += t3 - t2;
     timing_.frames++;
     last_ = {t_fence - t0, t1 - t_fence, t2 - t1, t3 - t2, id};
-    if (capture) {
+    if (capture && capture_path_.empty()) {   // a frame burst: read at the next image's start
+        read_back_pending_ = true, read_back_w_ = extent_.width, read_back_h_ = extent_.height;
+    } else if (capture) {
         vkWaitForFences(device_, 1, &fence_, VK_TRUE, UINT64_MAX);
         void* data = nullptr;
         vkMapMemory(device_, capture_memory_, 0, VK_WHOLE_SIZE, 0, &data);
         if (read_back_) read_back_(static_cast<const unsigned char*>(data), extent_.width, extent_.height, size_t(extent_.width) * 4);
-        if (!capture_path_.empty())
         if (FILE* f = fopen(capture_path_.c_str(), "wb")) {
             BITMAPFILEHEADER fh{};
             BITMAPINFOHEADER ih{};
