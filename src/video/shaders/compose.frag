@@ -44,7 +44,7 @@ layout(push_constant) uniform Compose {
 } pc;
 
 const ivec2 SIZE_2D = ivec2(496, 384);
-const int BACK_MARGIN = 760;   // tilegen.h: the back layers extend beyond both sides (Wheelkit: three screens)
+const int BACK_MARGIN = 200;   // tilegen.h: the back layers extend beyond both sides
 const ivec2 SIZE_BACK = ivec2(496 + 2 * BACK_MARGIN, 384);
 
 // ---- xBR-lv2 ---------------------------------------------------------------
