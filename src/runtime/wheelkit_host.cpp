@@ -362,7 +362,8 @@ void wheelkit_game_frame() {
     car.race_on = int(rd32(SEQUENCE)) == 1 && rd32(SELECT_STEP) == 17 && rd32(RACE_RESULT) <= 1 && GetTickCount64() - g_world_at.load() < 250;
     float speed = std::bit_cast<float>(rd32(SPEED));
     car.speed = std::isfinite(speed) ? speed : 0.0f;
-    car.gear = std::clamp(int(rd32(HUD_GEAR)), 0, 4);
+    // Manual: the cabinet's shifter as the game reads it (0 neutral, as its HUD's N); HUD_GEAR keeps 1 in neutral
+    car.gear = std::clamp(rd32(TRANSMISSION) ? int(g_inputs.gear) : int(rd32(HUD_GEAR)), 0, 4);
     car.throttle = float(g_inputs.accel) / 255.0f;
     car.brake = float(g_inputs.brake) / 255.0f;
     car.handbrake = g_inputs.handbrake ? 1.0f : 0.0f;
