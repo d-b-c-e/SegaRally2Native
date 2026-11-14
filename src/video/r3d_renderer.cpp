@@ -1329,13 +1329,52 @@ void R3DRenderer::record_uploads(const Frame& f) {
         transition(cmd, sky_coords_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         layers_dirty_ = false;
     }
-    size_t total = vcount;
+    // Wheelkit (a modified version's addition): the game sends its sky as a few large far panels over about 120 degrees,
+    // enough for its own view; on three screens they are drawn again turned left and right by the arc they cover, so the
+    // side screens show the same sky instead of its end (decision 0069)
+    sky_copies_.clear();
+    if (wheelkit_three_screens() && scene_)
+        for (const R3DViewport& v : scene_->viewports) {
+            if (!v.world) continue;
+            const std::vector<R3DVertex>& vs = scene_->vertices;
+            float lo = 1e9f, hi = -1e9f;
+            std::vector<uint32_t> sky;
+            for (uint32_t t = v.opaque_first; t + 2 < v.opaque_first + v.opaque_count && t + 2 < vs.size(); t += 3) {
+                bool distant = true;
+                for (int k = 0; k < 3; k++) {
+                    const float* p = vs[t + k].pos;
+                    distant = distant && p[0] * p[0] + p[1] * p[1] + p[2] * p[2] > SKY_NEAREST * SKY_NEAREST;
+                }
+                if (!distant) continue;
+                sky.push_back(t);
+                for (int k = 0; k < 3; k++) {
+                    float yaw = std::atan2(vs[t + k].pos[0], -vs[t + k].pos[2]);
+                    lo = std::min(lo, yaw), hi = std::max(hi, yaw);
+                }
+            }
+            const float arc = hi - lo;
+            if (sky.empty() || arc <= 0.3f || arc >= 3.1f) break;
+            for (float turn : {arc, -arc}) {
+                const float c = std::cos(turn), s = std::sin(turn);
+                auto spin = [&](float* q) { const float x = q[0], z = q[2]; q[0] = c * x - s * z, q[2] = s * x + c * z; };
+                for (uint32_t t : sky)
+                    for (int k = 0; k < 3; k++) {
+                        R3DVertex x = vs[t + k];
+                        spin(x.pos), spin(x.nrm), spin(x.prev);
+                        sky_copies_.push_back(x);
+                    }
+            }
+            break;
+        }
+    size_t total = vcount + sky_copies_.size();
     if (total * sizeof(R3DVertex) > vertices_.size) {
         vkDeviceWaitIdle(dev_);
         destroy_buffer(vertices_);
         create_buffer(vertices_, total * sizeof(R3DVertex) * 2, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     }
     if (vcount) memcpy(vertices_.mapped, scene_->vertices.data(), vcount * sizeof(R3DVertex));
+    if (!sky_copies_.empty())
+        memcpy(static_cast<R3DVertex*>(vertices_.mapped) + vcount, sky_copies_.data(), sky_copies_.size() * sizeof(R3DVertex));
 }
 
 // Global illumination: the rays for every pixel of the half-size image (16
@@ -1669,6 +1708,8 @@ void R3DRenderer::record_world(const Frame& f) {
                                        sizeof(pc), &pc);
                     if (pass == 0) {
                         vkCmdDraw(cmd, count, 1, v.opaque_first, 0);
+                        if (v.world && nviews == 3 && !sky_copies_.empty())   // Wheelkit: the sky turned (record_uploads)
+                            vkCmdDraw(cmd, uint32_t(sky_copies_.size()), 1, uint32_t(scene_->vertices.size()), 0);
                         continue;
                     }
                     draw_runs(translucent_, blob_);
