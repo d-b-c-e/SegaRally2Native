@@ -1329,67 +1329,51 @@ void R3DRenderer::record_uploads(const Frame& f) {
         transition(cmd, sky_coords_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         layers_dirty_ = false;
     }
-    // Wheelkit (a modified version's addition): the game sends its sky as a few large far panels over about 120 degrees,
-    // enough for its own view; on three screens they are drawn again turned left and right by the arc they cover, so the
-    // side screens show the same sky instead of its end (decision 0069)
-    sky_copies_.clear();
-    sky_tris_.clear();
-    if (wheelkit_three_screens() && scene_)
-        for (const R3DViewport& v : scene_->viewports) {
-            if (!v.world) continue;
-            const std::vector<R3DVertex>& vs = scene_->vertices;
-            const uint32_t end = std::min<uint32_t>(v.opaque_first + v.opaque_count, uint32_t(vs.size()));
-            auto len = [](const float* p) { return std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]); };
-            // The sky's texture: that of the triangles wholly beyond SKY_NEAREST; then every triangle in it is the sky
-            std::vector<uint32_t> texes;
-            for (uint32_t t = v.opaque_first; t + 2 < end; t += 3)
-                if (len(vs[t].pos) > SKY_NEAREST && len(vs[t + 1].pos) > SKY_NEAREST && len(vs[t + 2].pos) > SKY_NEAREST &&
-                    std::find(texes.begin(), texes.end(), vs[t].tex) == texes.end())
-                    texes.push_back(vs[t].tex);
-            float lo = 1e9f, hi = -1e9f;
-            for (uint32_t t = v.opaque_first; t + 2 < end; t += 3) {
-                if (std::find(texes.begin(), texes.end(), vs[t].tex) == texes.end()) continue;
-                sky_tris_.push_back(t);
-                for (int k = 0; k < 3; k++) {
-                    const float yaw = std::atan2(vs[t + k].pos[0], -vs[t + k].pos[2]);
-                    lo = std::min(lo, yaw), hi = std::max(hi, yaw);
-                }
-            }
-            const float arc = hi - lo;
-            if (sky_tris_.empty() || arc <= 0.3f || arc >= 3.1f) { sky_tris_.clear(); break; }
-            // Every corner at one distance (its direction kept, so it lands on the same pixel): the haze the game's sky
-            // gets by distance is then the same over all of it (its nearer edge panels were a darker band at 63 degrees).
-            // The copies a tenth of the arc overlapping and a little farther, under the original where they overlap
-            auto onto = [&](float* q, float r) { const float l = len(q); if (l > 0) q[0] *= r / l, q[1] *= r / l, q[2] *= r / l; };
-            for (float turn : {0.9f * arc, -0.9f * arc}) {
-                const float c = std::cos(turn), s = std::sin(turn);
-                auto spin = [&](float* q) { const float x = q[0], z = q[2]; q[0] = c * x - s * z, q[2] = s * x + c * z; };
-                for (uint32_t t : sky_tris_)
-                    for (int k = 0; k < 3; k++) {
-                        R3DVertex x = vs[t + k];
-                        spin(x.pos), spin(x.nrm), spin(x.prev), onto(x.pos, SKY_RADIUS * 1.05f), onto(x.prev, SKY_RADIUS * 1.05f);
-                        sky_copies_.push_back(x);
-                    }
-            }
-            break;
-        }    size_t total = vcount + sky_copies_.size();
+    size_t total = vcount;
     if (total * sizeof(R3DVertex) > vertices_.size) {
         vkDeviceWaitIdle(dev_);
         destroy_buffer(vertices_);
         create_buffer(vertices_, total * sizeof(R3DVertex) * 2, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
     }
     if (vcount) memcpy(vertices_.mapped, scene_->vertices.data(), vcount * sizeof(R3DVertex));
-    for (uint32_t t : sky_tris_)   // Wheelkit: the original sky at one distance too (above)
-        for (int k = 0; k < 3; k++) {
-            R3DVertex& x = static_cast<R3DVertex*>(vertices_.mapped)[t + k];
-            for (float* q : {x.pos, x.prev}) {
-                const float l = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2]);
-                if (l > 0) q[0] *= SKY_RADIUS / l, q[1] *= SKY_RADIUS / l, q[2] *= SKY_RADIUS / l;
-            }
+    // Wheelkit (a modified version's addition): the game's sky is a dome of large far panels that turns with the camera
+    // (Desert's: 128 triangles 2,200 to 4,100 units away, all the way round), its clouds painted over the front only:
+    // past about 70 degrees it shows the picture's smeared edge and a paler sky. On three screens the dome is spread out
+    // past the centre screen's edge, so the side screens show its clouds out to their outer edges (issue sega-rally-2-0004)
+    if (scene_) for (const R3DViewport& v : scene_->viewports) {
+        if (!v.world) continue;
+        float views[3][16], per[3][7];
+        if (wheelkit_views(v.proj, float(f.out_w) / 3.0f / float(f.out_h) * SCREEN_H / SCREEN_W, views, per) != 3) break;
+        auto edge = [&](const float* q, float nx) {   // yaw of a screen's edge from ahead (radians)
+            const float sl = (nx + q[2]) / q[0];
+            return std::fabs(q[4] != 0 || q[5] != 0 ? std::atan2(q[4] * sl - q[5], q[4] - q[6] * sl) : std::atan(sl));
+        };
+        const float from = std::max(edge(per[1], -1), edge(per[1], 1)) + 0.02f;   // the centre screen's edge
+        const float to = std::max(std::max(edge(per[0], -1), edge(per[0], 1)), std::max(edge(per[2], -1), edge(per[2], 1)));
+        constexpr float CLEAN = 1.15f, NEAREST = 1200.0f;   // the clouds reach 66 degrees; the dome is past 1,200 units
+        if (to <= CLEAN || from >= CLEAN) break;
+        const float gain = (to - from) / (CLEAN - from);
+        auto beyond = [](const float* p) { return p[0] * p[0] + p[1] * p[1] + p[2] * p[2] > NEAREST * NEAREST; };
+        const uint32_t end = std::min<uint32_t>(v.opaque_first + v.opaque_count, uint32_t(vcount));
+        R3DVertex* vs = static_cast<R3DVertex*>(vertices_.mapped);
+        uint32_t tex = ~0u;   // the dome's texture: that of the triangles wholly beyond NEAREST
+        for (uint32_t t = v.opaque_first; t + 2 < end && tex == ~0u; t += 3)
+            if (beyond(vs[t].pos) && beyond(vs[t + 1].pos) && beyond(vs[t + 2].pos)) tex = vs[t].tex;
+        auto turn = [](float* q, float d) {   // about the view's up axis, by d (radians) more yaw
+            const float c = std::cos(d), s = std::sin(d), x = q[0], z = q[2];
+            q[0] = x * c - z * s, q[2] = z * c + x * s;
+        };
+        auto spread = [&](const float* q) {   // how much farther round a point of the dome goes
+            const float yaw = std::atan2(q[0], -q[2]), a = std::fabs(yaw);
+            return a <= from ? 0.0f : std::copysign(std::min(from + (a - from) * gain, 3.10f) - a, yaw);
+        };
+        for (uint32_t i = v.opaque_first; i < end; i++) {
+            if (vs[i].tex != tex) continue;
+            const float d = spread(vs[i].pos), dp = spread(vs[i].prev);
+            turn(vs[i].pos, d), turn(vs[i].nrm, d), turn(vs[i].prev, dp);
         }
-    if (!sky_copies_.empty())
-        memcpy(static_cast<R3DVertex*>(vertices_.mapped) + vcount, sky_copies_.data(), sky_copies_.size() * sizeof(R3DVertex));
-}
+        break;
+    }}
 
 // Global illumination: the rays for every pixel of the half-size image (16
 // times as many for each block of 4x4 put together, ao_apply.frag) and how
@@ -1726,8 +1710,6 @@ void R3DRenderer::record_world(const Frame& f) {
                                        sizeof(pc), &pc);
                     if (pass == 0) {
                         vkCmdDraw(cmd, count, 1, v.opaque_first, 0);
-                        if (v.world && nviews == 3 && !sky_copies_.empty())   // Wheelkit: the sky turned (record_uploads)
-                            vkCmdDraw(cmd, uint32_t(sky_copies_.size()), 1, uint32_t(scene_->vertices.size()), 0);
                         continue;
                     }
                     draw_runs(translucent_, blob_);
