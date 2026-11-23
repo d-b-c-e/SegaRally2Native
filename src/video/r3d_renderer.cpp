@@ -1671,6 +1671,10 @@ void R3DRenderer::record_world(const Frame& f) {
                     pc.fog_color[3] = v.fog_ambient;
                     pc.params[0] = v.ambient * light_gain_;
                     pc.params[1] = v.fog_density;
+                    // Wheelkit (a modified version's addition): with three views the fog goes by the distance (r3d.frag), its
+                    // sign the flag (the game's density is never negative, r3d_scene.cpp); by the centre's depth it faded out
+                    // past about 63 degrees on the side screens, the sky beyond unfogged (issue sega-rally-2-0004)
+                    if (nviews == 3) pc.params[1] = -v.fog_density;
                     pc.params[2] = v.fog_start;
                     pc.params[3] = before;
                     pc.quality[0] = pass == 0 ? float(samples_) + alpha_seed : -float(samples_);

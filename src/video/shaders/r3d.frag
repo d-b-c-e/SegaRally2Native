@@ -336,6 +336,14 @@ vec3 sky_ambient(vec3 n) {
     return mix(vec3(1.0), c, 0.35 * atm.sunlight.z);
 }
 
+// The game's fog (0..1) by the depth of the view (Wheelkit, a modified version's addition: with three views, flagged by a
+// negative density, by the distance instead, so it does not fade out on the side screens past where the centre's depth
+// stops growing: the sky beyond about 63 degrees was unfogged, a band of another colour; issue sega-rally-2-0004)
+float game_fog() {
+    float z = vp.params.y < 0.0 ? length(view_pos) : -view_pos.z;
+    return clamp(vp.params.z + z * abs(vp.params.y), 0.0, 1.0);
+}
+
 // Spotlight of the original (spec 7.1): a lobe around a point of the view
 // (spot_lobe), fading with distance past the extent. x: lobe on the light,
 // y: lobe on the fog
@@ -450,7 +458,7 @@ void main() {
         c.a *= fade;
         if (c.a < 1.0 / 255.0) discard;
         c.rgb = min(c.rgb, vec3(atm.soft.z > 0.5 ? 8.0 : 1.0));
-        float fog = params.y * clamp(vp.params.z + (-view_pos.z) * vp.params.y, 0.0, 1.0);
+        float fog = params.y * game_fog();
         if (fog > 0.0) c.rgb = mix(c.rgb, vp.fog_color.rgb * vp.fog_color.a * mist_light(view_pos), fog);
         if (atm.haze.a > 0.0) c.rgb = distance_haze(c.rgb, view_pos, fog);
         out_color = c;
@@ -679,7 +687,7 @@ void main() {
     // curve rolls them off
     c.rgb = min(c.rgb, vec3(atm.soft.z > 0.5 ? 8.0 : 1.0));
 
-    float fog = params.y * clamp(vp.params.z + (-view_pos.z) * vp.params.y, 0.0, 1.0);
+    float fog = params.y * game_fog();
     vec3 fog_color = vp.fog_color.rgb * vp.fog_color.a;
     if ((flags & WORLD) != 0u && fog > 0.0) fog_color = fog_color * mist_light(view_pos) + atm.spot_fog.rgb * spotlight().y;
     c.rgb = mix(c.rgb, fog_color, fog);
