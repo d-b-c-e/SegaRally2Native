@@ -539,8 +539,13 @@ std::vector<Frontend::Item> Frontend::items() const {
                 {OPT_GAMMA, L"GAMMA", gamma_text, L"Brightness of the mid-tones (1.00 = original)"},
                 {OPT_SHARPEN, L"SHARPEN", on_off(settings.sharpen),
                  L"Brings back texture detail after the edge smoothing, without halos"},
+#ifdef SR2_WHEELKIT
+                {OPT_UPDATES, L"CHECK FOR UPDATES", L"N/A",
+                 L"Wheelkit updates this version; upstream's update would remove Wheelkit", false},
+#else
                 {OPT_UPDATES, L"CHECK FOR UPDATES", on_off(settings.check_updates),
                  L"At launch, look on GitHub for a new version and show what is new in it"},
+#endif
                 {OPT_HUD, L"HD HUD", on_off(settings.hd_hud),
                  settings.hd_hud ? L"Redrawn HUD: sharp fonts, rev counters, gear box and co-driver signs"
                                  : L"The arcade's original pixel HUD and screens"},
@@ -662,7 +667,11 @@ void Frontend::activate(const Item& it, int dir) {
         settings.music = dir > 0 && settings.music == 10 && wrap_ ? 0 : std::clamp(settings.music + dir, 0, 10);
         push(Action::SettingsChanged);
         break;
-    case OPT_UPDATES: settings.check_updates = !settings.check_updates; push(Action::SettingsChanged); break;
+    case OPT_UPDATES:
+#ifdef SR2_WHEELKIT
+        break;   // Wheelkit's build never checks
+#endif
+        settings.check_updates = !settings.check_updates; push(Action::SettingsChanged); break;
     case OPT_MENU_MUSIC: settings.menu_music = !settings.menu_music; push(Action::SettingsChanged); break;
     case OPT_SPEAKERS: settings.speakers = (settings.speakers + dir + 3) % 3; push(Action::SettingsChanged); break;
     case OPT_REAR: settings.rear_boost = (settings.rear_boost + 3 * dir + 15) % 15; push(Action::SettingsChanged); break;
@@ -858,6 +867,9 @@ void Frontend::play_recomp(int g) {
 // ---- UPDATE AVAILABLE ----
 
 void Frontend::check_for_news() {
+#ifdef SR2_WHEELKIT
+    return;   // Wheelkit's build: upstream's update would replace this fork's sources and rebuild without Wheelkit
+#endif
     if (!settings.check_updates || news_download_) return;
     auto d = std::make_shared<NewsDownload>();
     news_download_ = d;
@@ -932,6 +944,9 @@ void Frontend::news_choose(int button) {
 // the game to close, updates, rebuilds and starts it again. Without
 // update.bat (an old folder) the GitHub page opens instead
 void Frontend::start_update() {
+#ifdef SR2_WHEELKIT
+    return;   // never run update.bat from a Wheelkit build (it would drop the fork)
+#endif
     wchar_t module[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, module, MAX_PATH);
     std::wstring dir = module;
