@@ -202,9 +202,10 @@ void UiOverlay::record(VkCommandBuffer cmd, VkImageView target, VkExtent2D exten
     vkCmdBeginRendering(cmd, &ri);
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1, &set_, 0, nullptr);
-    VkViewport full{0, 0, float(extent.width), float(extent.height), 0, 1};
+    const uint32_t left = 2 * left_ < extent.width ? left_ : 0;   // Wheelkit: set_left
+    VkViewport full{float(left), 0, float(extent.width - 2 * left), float(extent.height), 0, 1};
     vkCmdSetViewport(cmd, 0, 1, &full);
-    VkRect2D all{{0, 0}, extent};
+    VkRect2D all{{int32_t(left), 0}, {extent.width - 2 * left, extent.height}};
     vkCmdSetScissor(cmd, 0, 1, &all);
     vkCmdDraw(cmd, 3, 1, 0, 0);
     vkCmdEndRendering(cmd);

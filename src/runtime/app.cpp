@@ -620,6 +620,10 @@ int main(int argc, char** argv) {
         g_menu_open = true;
         presenter.input_hook = [&](UINT msg, WPARAM wp, LPARAM lp) -> bool {
             int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp);
+            RECT client;   // Wheelkit: the menus' own pixels on three screens (wheelkit_menu_side)
+            GetClientRect(presenter.hwnd(), &client);
+            const int side = wheelkit_menu_side(client.right);
+            if (msg != WM_MOUSEWHEEL) x -= side;
             if (!frontend.active()) {   // in the game: Esc pauses
                 if (msg == WM_KEYDOWN && wp == VK_ESCAPE) {
                     frontend.open(Frontend::Screen::Pause);
@@ -649,7 +653,7 @@ int main(int argc, char** argv) {
             case WM_MOUSEWHEEL: {
                 POINT p{x, y};   // screen coordinates for this one
                 ScreenToClient(presenter.hwnd(), &p);
-                frontend.wheel(p.x, p.y, GET_WHEEL_DELTA_WPARAM(wp));
+                frontend.wheel(p.x - side, p.y, GET_WHEEL_DELTA_WPARAM(wp));
                 return true;
             }
             }
@@ -1067,8 +1071,10 @@ int main(int argc, char** argv) {
                              g_in_attract && !g_menu_open && !g_boot_skip && !g_arcade_entry);
             RECT rc;
             GetClientRect(presenter.hwnd(), &rc);
-            if (toast.draw(rc.right, rc.bottom, qpc_seconds(), toast_pixels))
-                toast_layer.set_image(toast_pixels.data(), rc.right, rc.bottom);
+            const int side = wheelkit_menu_side(rc.right);   // Wheelkit: on three screens on the centre one
+            toast_layer.set_left(uint32_t(side));
+            if (toast.draw(rc.right - 2 * side, rc.bottom, qpc_seconds(), toast_pixels))
+                toast_layer.set_image(toast_pixels.data(), rc.right - 2 * side, rc.bottom);
         }
         if (g_opt.menu) {
             for (Frontend::Action a : frontend.take_actions()) {
@@ -1207,6 +1213,11 @@ int main(int argc, char** argv) {
                 RECT rc;
                 GetClientRect(presenter.hwnd(), &rc);
                 double t0 = qpc_seconds();
+                // Wheelkit (a modified version's addition): on three screens the menus are drawn for the centre screen
+                // and shown there, not spread over the three (the backdrop blown up 4.6 times, the column on the right one)
+                const int side = wheelkit_menu_side(rc.right);
+                rc.right -= 2 * side;
+                ui.set_left(uint32_t(side));
                 if (frontend.draw(rc.right, rc.bottom, ui_pixels)) {
                     ui.set_image(ui_pixels.data(), rc.right, rc.bottom);
                     double ms = (qpc_seconds() - t0) * 1000;

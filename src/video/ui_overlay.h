@@ -14,6 +14,9 @@ public:
     // New picture (w x h BGRA, premultiplied); uploaded with the next record
     void set_image(const uint32_t* bgra, uint32_t w, uint32_t h);
     void hide() { visible_ = false; }
+    // Wheelkit (a modified version's addition): the picture between x and the window's width less x (on three screens
+    // the centre one), not stretched over the whole window
+    void set_left(uint32_t x) { left_ = x; }
     bool visible() const { return visible_; }
 
     // After the main renderer: blends the picture over the swapchain image
@@ -35,6 +38,7 @@ private:
     std::vector<uint32_t> pending_;
     uint32_t pending_w_ = 0, pending_h_ = 0;
     bool dirty_ = false, visible_ = false;
+    uint32_t left_ = 0;   // Wheelkit: set_left
 
     VkSampler sampler_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;

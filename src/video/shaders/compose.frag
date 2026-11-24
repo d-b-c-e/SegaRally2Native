@@ -152,8 +152,22 @@ vec4 xbr(sampler2D layer, vec2 q, ivec2 size) {
     return cdist(E, res2) >= cdist(E, res1) ? res2 : res1;
 }
 
+// Plain pixels, all the same size: each 2D pixel a solid block, blended with
+// its neighbour over one window pixel at its edges. Plain nearest sampling at a
+// scale that is not whole (3.75 at 1440p) gives rows and columns of uneven
+// width, which makes the letters wobble (upstream e8b3dd3, taken early by Wheelkit)
+vec4 sharp_pixels(sampler2D layer, vec2 q, ivec2 size) {
+    vec2 pos = q * vec2(size) - 0.5;
+    vec2 i = floor(pos);
+    vec2 f = clamp((pos - i - 0.5) * max(pc.filter2d.y, 1.0) + 0.5, 0.0, 1.0);
+    ivec2 p = ivec2(i);
+    vec4 top = mix(texel(layer, size, p), texel(layer, size, p + ivec2(1, 0)), f.x);
+    vec4 bottom = mix(texel(layer, size, p + ivec2(0, 1)), texel(layer, size, p + ivec2(1, 1)), f.x);
+    return mix(top, bottom, f.y);   // premultiplied: blends cleanly into transparency
+}
+
 vec4 layer(sampler2D tex, vec2 q, ivec2 size) {
-    return pc.filter2d.x > 0.5 ? xbr(tex, q, size) : texture(tex, q);
+    return pc.filter2d.x > 0.5 ? xbr(tex, q, size) : sharp_pixels(tex, q, size);
 }
 
 // ---- Backdrop replacements ---------------------------------------------------

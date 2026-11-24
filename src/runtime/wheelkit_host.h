@@ -58,3 +58,5 @@ inline void wheelkit_motor(int, int) {}
 inline void wheelkit_game_frame() {}
 inline void wheelkit_stop() {}
 #endif
+// The port's menus (and its toasts) on three screens: the window's pixels left of the centre screen, 0 otherwise
+inline int wheelkit_menu_side(int window_w) { return wheelkit_three_screens() ? window_w / 3 : 0; }
