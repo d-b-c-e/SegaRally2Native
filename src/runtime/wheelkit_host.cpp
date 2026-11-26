@@ -17,6 +17,7 @@
 #include "proxy/dbce_proxy_side_black.hpp"   // the runtime's black side screens (header only)
 #include "frames/frame_burst.hpp"            // the runtime's frame bursts (header only)
 #include "triples/triple_views_vulkan.hpp"   // the runtime's views in a Vulkan renderer's form (header only)
+#include "cameras/view_restore.hpp"         // the runtime's last view at a race's start (header only)
 #include <cstdarg>
 #include <cstring>
 #include <vector>
@@ -27,7 +28,7 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.5.15-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.5.16-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Set against art of rally's held corner at turn-in (0.22 to 0.25): at 0.4 SEGA Rally 2's read 0.13 to 0.17 (2026-11-14)
 constexpr float FORCE_SCALE = 0.6f;
@@ -47,6 +48,12 @@ unsigned g_frames = 0;
 constexpr uint32_t SEQUENCE = 0x22D618, SELECT_STEP = 0x22435C, RACE_RESULT = 0x22D630, RACE_TIME = 0x22D080;
 constexpr uint32_t SPEED = 0x22F3A8, HUD_GEAR = 0x13AB80, HUD_LAP = 0x13AB94, HUD_POSITION = 0x13AB74, TRANSMISSION = 0x224334;
 constexpr uint32_t VIEW = 0x2244EC;   // VIEW CHANGE: 4 the first view, 5 the other (found by RAM dumps around presses; byte)
+// The view last driven in comes back at a race's start (STD-107): the runtime's ViewRestore over the cabinet's two views,
+// asked by a press of VIEW CHANGE; the last one kept in save\wheelkit.ini [Cameras] Last.
+const wheelkit::cameras::View CAMERA_VIEWS[] = {{"Bumper", "Bumper", true}, {"Chase", "Chase", false}};
+wheelkit::cameras::ViewRestore g_restore;              // game thread only
+int g_saved_view = wheelkit::cameras::kNoView;         // game thread only, after start
+std::atomic<int> g_view_press{0};                      // frames VIEW CHANGE is still held for the restore
 
 // The F6 panel's pages (the runtime owns the force and Steering strength rows). Screens and telemetry follow the
 // rig profile Wheelkit writes into save\wheelkit.ini ([Triple] Screens, [Telemetry] Enabled): no row for them
@@ -123,6 +130,12 @@ bool wheelkit_start() {
     if (g_panel) p_wk_panel_set_text("help.runtime", p_wk_runtime_version(), WK_TONE_NORMAL);
     static const wk_camera_view VIEWS[] = {{"Bumper", "Bumper", 1}, {"Chase", "Chase", 0}};   // the cabinet's two views
     p_wk_cameras_configure(VIEWS, 2);
+    char last[32] = {}, line[160];
+    if (p_wk_settings_get("Cameras", "Last", last, sizeof last))
+        for (int v = 0; v < 2; v++)
+            if (!_stricmp(last, CAMERA_VIEWS[v].key)) g_saved_view = v;
+    snprintf(line, sizeof line, "sega-rally-2: the view last driven in (%s) comes back at a race's start", g_saved_view >= 0 ? CAMERA_VIEWS[g_saved_view].name : "none yet");
+    p_wk_log(line);
     return true;
 }
 
@@ -266,6 +279,7 @@ bool wheelkit_controls(Inputs& in, bool driving) {
     in.brake = std::max(int(in.brake), adc(255.0f * s.brake));
     if (s.handbrake > 0.5f || s.held[WK_ACTION_HANDBRAKE]) in.handbrake = true;
     if (s.held[WK_ACTION_CAMERA]) in.view = true;   // VIEW CHANGE
+    if (g_view_press.load() > 0) { g_view_press--; in.view = true; }   // the restore's press
     if ((s.bound & WK_BOUND_GEARS) && s.transmission == WK_TRANSMISSION_H_PATTERN) {
         in.gear = std::clamp(s.gear, 0, 4);   // the cabinet's 4-speed H shifter; 0 = neutral
     } else {
@@ -360,6 +374,29 @@ void wheelkit_game_frame() {
         wk_camera cam{};
         cam.size = sizeof cam;
         p_wk_cameras_frame(rd8(VIEW) == 5 ? 1 : 0, nullptr, 0, &cam);
+    }
+    {   // the last view at a race's start (STD-107)
+        namespace wc = wheelkit::cameras;
+        const int view = car.race_on ? (rd8(VIEW) == 5 ? 1 : 0) : wc::kNoView;
+        int remember = wc::kNoView;
+        switch (g_restore.Tick(car.race_on != 0, !car.race_on, view, g_saved_view, now, remember)) {
+        case wc::ViewRestore::Ask: g_view_press = 6; break;   // a tenth of a second, as a press
+        case wc::ViewRestore::Restored:
+            snprintf(line, sizeof line, "cameras: %s is back at the race's start (the view last driven in)", CAMERA_VIEWS[g_saved_view].name);
+            p_wk_log(line);
+            break;
+        case wc::ViewRestore::GaveUp:
+            snprintf(line, sizeof line, "cameras: %s did not come back at the race's start in 5 s; the game's own view stays", CAMERA_VIEWS[g_saved_view].name);
+            p_wk_log(line);
+            break;
+        default: break;
+        }
+        if (remember != wc::kNoView) {
+            g_saved_view = remember;
+            const bool saved = p_wk_settings_set("Cameras", "Last", CAMERA_VIEWS[remember].key) != 0;
+            snprintf(line, sizeof line, "cameras: the view last driven in is %s%s", CAMERA_VIEWS[remember].name, saved ? "" : " (not saved)");
+            p_wk_log(line);
+        }
     }
     car.race_time = float(rd32(RACE_TIME)) / 6000.0f;
     car.lap = int(rd32(HUD_LAP)) + 1;
