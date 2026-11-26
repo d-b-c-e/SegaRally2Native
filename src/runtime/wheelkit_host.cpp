@@ -28,7 +28,7 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.5.17-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.5.18-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Set against art of rally's held corner at turn-in (0.22 to 0.25): at 0.4 SEGA Rally 2's read 0.13 to 0.17 (2026-11-14)
 constexpr float FORCE_SCALE = 0.6f;
@@ -55,6 +55,7 @@ const wheelkit::cameras::View CAMERA_VIEWS[] = {{"Bumper", "Bumper", true}, {"Ch
 wheelkit::cameras::ViewRestore g_restore;              // game thread only
 int g_saved_view = wheelkit::cameras::kNoView;         // game thread only, after start
 std::atomic<int> g_view_press{0};                      // frames VIEW CHANGE is still held for the restore
+std::atomic<unsigned long long> g_camera_at{0};        // the last press of VIEW CHANGE, the player's or the restore's
 
 // The F6 panel's pages (the runtime owns the force and Steering strength rows). Screens and telemetry follow the
 // rig profile Wheelkit writes into save\wheelkit.ini ([Triple] Screens, [Telemetry] Enabled): no row for them
@@ -290,7 +291,7 @@ bool wheelkit_controls(Inputs& in, bool driving) {
     in.accel = std::max(int(in.accel), adc(255.0f * s.throttle));
     in.brake = std::max(int(in.brake), adc(255.0f * s.brake));
     if (s.handbrake > 0.5f || s.held[WK_ACTION_HANDBRAKE]) in.handbrake = true;
-    if (s.held[WK_ACTION_CAMERA]) in.view = true;   // VIEW CHANGE
+    if (s.held[WK_ACTION_CAMERA]) in.view = true, g_camera_at = GetTickCount64();   // VIEW CHANGE
     if (g_view_press.load() > 0) { g_view_press--; in.view = true; }   // the restore's press
     if ((s.bound & WK_BOUND_GEARS) && s.transmission == WK_TRANSMISSION_H_PATTERN) {
         in.gear = std::clamp(s.gear, 0, 4);   // the cabinet's 4-speed H shifter; 0 = neutral
@@ -389,10 +390,13 @@ void wheelkit_game_frame() {
     }
     {   // the last view at a race's start (STD-107)
         namespace wc = wheelkit::cameras;
-        const int view = car.race_on ? (rd8(VIEW) == 5 ? 1 : 0) : wc::kNoView;
+        // The race by the game's own state, not by car.race_on: a view change can hold the 3D frame back past 250 ms, and
+        // a race counted as stopped then would ask for the view again (issue sega-rally-2-0008).
+        const bool in_race = int(rd32(SEQUENCE)) == 1 && last_step && rd32(RACE_RESULT) <= 1;
+        const int view = in_race ? (rd8(VIEW) == 5 ? 1 : 0) : wc::kNoView;
         int remember = wc::kNoView;
-        switch (g_restore.Tick(car.race_on != 0, !car.race_on, view, g_saved_view, now, remember)) {
-        case wc::ViewRestore::Ask: g_view_press = 6; break;   // a tenth of a second, as a press
+        switch (g_restore.Tick(in_race && car.race_on, !in_race, view, g_saved_view, now, remember)) {
+        case wc::ViewRestore::Ask: g_view_press = 6, g_camera_at = now; break;   // a tenth of a second, as a press
         case wc::ViewRestore::Restored:
             snprintf(line, sizeof line, "cameras: %s is back at the race's start (the view last driven in)", CAMERA_VIEWS[g_saved_view].name);
             p_wk_log(line);
@@ -403,6 +407,8 @@ void wheelkit_game_frame() {
             break;
         default: break;
         }
+        // Only a view the player chose is kept: the game's own change (the race's end shows Bumper) is not.
+        if (remember != wc::kNoView && g_saved_view != wc::kNoView && now - g_camera_at.load() > 1500) remember = wc::kNoView;
         if (remember != wc::kNoView) {
             g_saved_view = remember;
             const bool saved = p_wk_settings_set("Cameras", "Last", CAMERA_VIEWS[remember].key) != 0;
