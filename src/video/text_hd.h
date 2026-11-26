@@ -10,6 +10,7 @@
 // was made from. Colours come from the game's palette every frame.
 #pragma once
 #include <cstdint>
+#include <cstdio>
 
 #include "../common/fnv1a.h"
 #include <string>
@@ -52,6 +53,9 @@ public:
     std::vector<Group> groups8;   // 8 bpp blocks, by the hashes of their cells (glyphs.txt "G8")
 
     bool init(const std::string& dir);
+    // Adds another folder's glyphs (its atlas below this one's, its slots moved by as many): Wheelkit's letters of
+    // the arcade's screens (textures/text_wheelkit, the Redrawn letters option). Modified version, not upstream's
+    bool add(const std::string& dir);
     bool empty() const { return count_ == 0 && groups.empty() && groups8.empty(); }
     // Glyph for a 4 bpp pattern, if its pixels in `vram` are the expected ones
     const Glyph* find(uint32_t pattern, const uint8_t* vram) const;
@@ -66,6 +70,7 @@ public:
     std::vector<uint8_t> atlas_rgba;
 
 private:
+    bool read_glyphs(FILE* f, unsigned offset);   // glyphs.txt, its slots moved by offset; closes f
     std::vector<Glyph> glyphs_;   // indexed by pattern number
     std::unordered_map<uint64_t, Glyph> glyphs8_;  // 8 bpp ones (glyphs.txt "B" lines), by the hash of their pixels
     int count_ = 0;

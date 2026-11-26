@@ -383,7 +383,7 @@ int main(int argc, char** argv) {
     // Window: the game runs on its own thread at real speed; this thread draws
     // the latest image at the monitor's refresh rate (vsync)
     VkPresenter presenter;
-    wheelkit_display(g_opt.max_aspect, g_opt.hud_centre);
+    wheelkit_display(g_opt.max_aspect, g_opt.hud_centre, g_opt.pixel_2d);
     if (!presenter.init("Sega Rally 2 Native by snicolast", int(SCREEN_H * 2 * std::max(g_opt.max_aspect, 4.0f / 3.0f)), SCREEN_H * 2,
                         g_opt.dlaa)) {
         fprintf(stderr, "Could not start Vulkan; try --headless\n");
@@ -507,7 +507,12 @@ int main(int argc, char** argv) {
     std::vector<int32_t> back_rows(SCREEN_H * 3), back_rows_prev(SCREEN_H * 3, -1);
     uint64_t back_rows_frame = ~0ull, shift_from = ~0ull, shift_to = ~0ull, built_from = ~0ull;
     TextHD text;   // menus, captions and score drawn from vector fonts
-    if ((g_opt.menu || !g_opt.classic_hud) && text.init("textures/text")) renderer.set_text_atlas(text);
+    if ((g_opt.menu || !g_opt.classic_hud) && text.init("textures/text")) {
+        // Wheelkit: the arcade screens' letters (RANKING, INSERT COIN, the cars' specifications), Redrawn letters option
+        if (const char* more = wheelkit_text_more())
+            printf("[text] %s: %s\n", more, text.add(more) ? "added" : "NOT added");
+        renderer.set_text_atlas(text);
+    }
     std::atomic<bool> capture_2d{false};   // F12 / --shot: the next 2D composition is saved
     // (debugging aid: LW_2D_CAPTURE=1 with --replay saves the snapshot's 2D layers to out/2d)
     if (!g_opt.replay.empty() && getenv("LW_2D_CAPTURE")) capture_2d = true;

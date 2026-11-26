@@ -21,6 +21,26 @@ bool TextHD::init(const std::string& dir) {
         return false;
     }
     glyphs_.assign(0x8000, Glyph{});
+    return read_glyphs(f, 0);
+}
+
+bool TextHD::add(const std::string& dir) {
+    int w = 0, h = 0;
+    std::vector<uint8_t> rgba;
+    FILE* f = fopen((dir + "/glyphs.txt").c_str(), "r");
+    if (!f) return false;
+    if (atlas_w == 0 || !png_load(dir + "/atlas.png", w, h, rgba) || w != atlas_w) {
+        fprintf(stderr, "[text] could not add %s (no atlas, or not %d wide)\n", dir.c_str(), atlas_w);
+        fclose(f);
+        return false;
+    }
+    const unsigned offset = unsigned(atlas_h / (atlas_w / ATLAS_COLS)) * ATLAS_COLS;   // whole rows of slots
+    atlas_rgba.insert(atlas_rgba.end(), rgba.begin(), rgba.end());
+    atlas_h += h;
+    return read_glyphs(f, offset);
+}
+
+bool TextHD::read_glyphs(FILE* f, unsigned offset) {
     char line[256];
     static char big[4096];
     while (fgets(big, sizeof(big), f)) {
@@ -45,7 +65,7 @@ bool TextHD::init(const std::string& dir) {
                 if (sscanf(p, " %llx:%u%n", &hash, &slot, &used) < 2) break;
                 p += used;
                 gr.hash.push_back(hash);
-                gr.slot.push_back(uint16_t(slot));
+                gr.slot.push_back(uint16_t(slot + offset));
                 gr.blank.push_back(hash == 0);
                 if (hash && gr.anchor < 0) gr.anchor = int(k);
             }
@@ -69,7 +89,7 @@ bool TextHD::init(const std::string& dir) {
                 p += used;
                 gr.pattern.push_back(pat);
                 gr.hash.push_back(hash);
-                gr.slot.push_back(uint16_t(slot));
+                gr.slot.push_back(uint16_t(slot + offset));
                 static const uint8_t zero[32] = {};
                 gr.blank.push_back(hash == pattern_hash(zero));
             }
@@ -87,7 +107,7 @@ bool TextHD::init(const std::string& dir) {
             continue;
         Glyph& g = eight ? glyphs8_[hash] : glyphs_[pattern];
         g.hash = hash;
-        g.slot = uint16_t(slot);
+        g.slot = uint16_t(slot + offset);
         g.top = uint8_t(top);
         g.bottom = uint8_t(bottom);
         g.edge = uint8_t(edge);

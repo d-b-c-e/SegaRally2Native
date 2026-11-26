@@ -150,7 +150,21 @@ void find_text(const uint8_t* vram, const TextHD& text, const uint32_t* scroll, 
                 if (!(scroll[layer] & 0x80000000u) || !(format & (1u << (8 + layer)))) continue;
                 int xs = int(scroll[layer] & 0x3FF), ys = int((scroll[layer] >> 16) & 0x1FF);
                 bool four_bpp = format & (1u << (12 + layer));
-                if ((scroll[layer] & 0x8000) || (xs & 7) || (ys & 7)) break;
+                if (scroll[layer] & 0x8000) {
+                    // Line scroll (Sega Rally 2's RANKING slides its rows in): a cell whose 8 lines share one X is
+                    // on the grid like a plain scroll. Wheelkit (modified version, not upstream's)
+                    int line_x = -1;
+                    bool same = true;
+                    for (int y = cy * 8; y < cy * 8 + 8 && same; y++) {
+                        uint32_t w = le32(vram + LINE_SCROLL + 0x400 * layer + (y / 2) * 4);
+                        int x = int((y & 1) ? (w & 0xFFFF) : (w >> 16)) & 0x3FF;
+                        same = line_x < 0 || x == line_x;
+                        line_x = x;
+                    }
+                    if (!same) break;
+                    xs = line_x;
+                }
+                if ((xs & 7) || (ys & 7)) break;
                 int px = (cx * 8 + xs) & 511, py = (cy * 8 + ys) & 511;
                 uint32_t pair_word = le32(vram + NAME_TABLES + 0x2000 * layer + ((py / 8) * 32 + px / 16) * 4);
                 uint32_t e = (px & 8) ? (pair_word & 0xFFFF) : (pair_word >> 16);

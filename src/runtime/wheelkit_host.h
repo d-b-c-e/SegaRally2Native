@@ -14,12 +14,16 @@ class VkPresenter;
 // Loads and starts the runtime (no window yet). False: upstream's own controls
 bool wheelkit_start();
 bool wheelkit_on();
-// Before the window: the layout of the screens; on three, the game stays on the centre one
-void wheelkit_display(float& aspect, bool& hud_centre);
+// Before the window: the layout of the screens; on three, the game stays on the centre one. pixel_2d: Wheelkit's
+// Pixel art option ([Options] pixelArt = sharp: the 2D layers as even square pixels, as --pixel2d)
+void wheelkit_display(float& aspect, bool& hud_centre, bool& pixel_2d);
 // The three screens' projections for a full-screen 3D viewport (projection p, widened by widen to fill one
 // screen), left to right; 0 when the game draws one view
 int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7] = nullptr);
 bool wheelkit_three_screens();   // the window covers the three screens (2D-only pictures go on the centre one)
+// Wheelkit's Redrawn letters option ([Options] redrawnText = 1): the folder of the arcade screens' letters added to
+// the port's high-resolution text (TextHD::add), nullptr when off. After wheelkit_display
+const char* wheelkit_text_more();
 // Frame bursts (the runtime's runtime/native/frames): each image, true while one runs; its images measured in _add
 bool wheelkit_frames_poll();
 void wheelkit_frames_add(const unsigned char* bgra, unsigned width, unsigned height, size_t pitch);
@@ -43,9 +47,10 @@ void wheelkit_stop();
 #else
 inline bool wheelkit_start() { return false; }
 inline bool wheelkit_on() { return false; }
-inline void wheelkit_display(float&, bool&) {}
+inline void wheelkit_display(float&, bool&, bool&) {}
 inline int wheelkit_views(const float*, float, float (*)[16], float (*)[7] = nullptr) { return 0; }
 inline bool wheelkit_three_screens() { return false; }
+inline const char* wheelkit_text_more() { return nullptr; }
 inline bool wheelkit_frames_poll() { return false; }
 inline void wheelkit_frames_add(const unsigned char*, unsigned, unsigned, size_t) {}
 inline void wheelkit_camera(const float*) {}

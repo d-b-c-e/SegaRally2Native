@@ -28,7 +28,7 @@ namespace {
 WK_FUNCTIONS(X)
 #undef X
 
-constexpr const char* VERSION = "0.5.16-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
+constexpr const char* VERSION = "0.5.17-alpha";   // this build's, by Wheelkit's scheme (not upstream's)
 // The drive board's full torque (0x40 from the centre) as a part of the wheel's own maximum, at Steering strength 50.
 // Set against art of rally's held corner at turn-in (0.22 to 0.25): at 0.4 SEGA Rally 2's read 0.13 to 0.17 (2026-11-14)
 constexpr float FORCE_SCALE = 0.6f;
@@ -38,6 +38,7 @@ wk_triples g_screens{};
 std::atomic<float> g_heading{0.0f};  // radians, clockwise from above: the camera's heading (window thread)
 std::atomic<bool> g_racing{false};  // a race is on (game thread): three views only then, the centre screen otherwise
 bool g_three = false;              // three projected views over the three screens (the rig's measurements)
+bool g_redrawn_text = false;       // the Redrawn letters option (window thread, before the renderer)
 std::atomic<unsigned long long> g_world_at{0};   // when the 3D world was last drawn (a course's title card has none)
 std::atomic<unsigned long long> g_world_since{0};   // since when it has been drawn without a gap
 std::atomic<int> g_profile_box{WK_TRANSMISSION_UNKNOWN};   // the rig profile's Transmission (window thread)
@@ -142,8 +143,18 @@ bool wheelkit_start() {
 // Before the window: the layout (the rig profile's [Triple] Screens, else the displays). With the rig's measurements
 // the window covers the three screens and the 3D world is drawn three times at the rig's angles (wheelkit_views); the
 // 2D screens and the HUD stay in the middle
-void wheelkit_display(float& aspect, bool& hud_centre) {
+void wheelkit_display(float& aspect, bool& hud_centre, bool& pixel_2d) {
     if (!g_on) return;
+    // Pixel art (the app's Game options, save\wheelkit.ini [Options] pixelArt): sharp = upstream's --pixel2d, the
+    // arcade's pictures and letters as even square pixels; smoothed (or none) = upstream's xBR
+    char art[16] = {};
+    if (p_wk_settings_get("Options", "pixelArt", art, sizeof art) && !_stricmp(art, "sharp")) pixel_2d = true;
+    p_wk_log(pixel_2d ? "sega-rally-2: pixel art: sharp square pixels (the arcade's own pixels, no xBR)"
+                      : "sega-rally-2: pixel art: smoothed (xBR)");
+    // Redrawn letters (test): the arcade screens' letters drawn from a font (textures/text_wheelkit)
+    char redrawn[8] = {};
+    g_redrawn_text = p_wk_settings_get("Options", "redrawnText", redrawn, sizeof redrawn) && redrawn[0] == '1';
+    if (g_redrawn_text) p_wk_log("sega-rally-2: redrawn letters: on (textures/text_wheelkit added to the port's text)");
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);   // the layout is in real pixels
     g_screens.size = sizeof g_screens;
     if (!p_wk_triples_get(&g_screens)) g_screens.span = 0;
@@ -201,6 +212,7 @@ int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7]
     return count;
 }
 bool wheelkit_three_screens() { return g_three; }
+const char* wheelkit_text_more() { return g_redrawn_text ? "textures/text_wheelkit" : nullptr; }
 
 // Frame bursts: %LOCALAPPDATA%\Wheelkit\sega-rally-2\frames.txt asks for one (a fenced test run or the developer switch)
 static wheelkit::frames::HostBurst g_burst;
