@@ -21,6 +21,7 @@ void wheelkit_display(float& aspect, bool& hud_centre, bool& pixel_2d);
 // screen), left to right; 0 when the game draws one view
 int wheelkit_views(const float* p, float widen, float out[3][16], float ao[3][7] = nullptr);
 bool wheelkit_three_screens();   // the window covers the three screens (2D-only pictures go on the centre one)
+void wheelkit_note(const char* line);   // a line in the runtime's log (wheelkit.log)
 // Wheelkit's Redrawn letters option ([Options] redrawnText = 1): the folder of the arcade screens' letters added to
 // the port's high-resolution text (TextHD::add), nullptr when off. After wheelkit_display
 const char* wheelkit_text_more();
@@ -50,6 +51,7 @@ inline bool wheelkit_on() { return false; }
 inline void wheelkit_display(float&, bool&, bool&) {}
 inline int wheelkit_views(const float*, float, float (*)[16], float (*)[7] = nullptr) { return 0; }
 inline bool wheelkit_three_screens() { return false; }
+inline void wheelkit_note(const char*) {}
 inline const char* wheelkit_text_more() { return nullptr; }
 inline bool wheelkit_frames_poll() { return false; }
 inline void wheelkit_frames_add(const unsigned char*, unsigned, unsigned, size_t) {}

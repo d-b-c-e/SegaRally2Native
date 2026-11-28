@@ -232,6 +232,8 @@ private:
     bool shadow_frame_ = false;        // the shadow map is drawn this frame
     bool three_drawn_ = false;         // Wheelkit (a modified version's addition): the world drawn on three screens this frame
     std::vector<R3DVertex> sky_turned_;   // Wheelkit: the game's sky dome turned to the left screen, then the right (record_uploads)
+    std::vector<std::pair<uint32_t, uint32_t>> sky_keep_;   // Wheelkit: the world's opaque runs without the dome (first, count)
+    uint32_t sky_first_ = ~0u, sky_logged_ = ~0u;   // Wheelkit: the viewport they are for (its opaque_first); the dome last logged
     VkPipeline shadow_ = VK_NULL_HANDLE;
     R3DRayTracer rt_;
     int ray_tracing_ = 2;

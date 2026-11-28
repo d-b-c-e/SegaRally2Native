@@ -1334,34 +1334,72 @@ void R3DRenderer::record_uploads(const Frame& f) {
     // past about 70 degrees it shows the picture's smeared edge and a paler sky. On three screens each side screen gets
     // the dome turned toward it, so its clouds reach the outer edge; nearer than the dome, behind everything else, it
     // covers the game's own there (record_world; issue sega-rally-2-0004)
+    // Wheelkit (a modified version's addition): the game's sky is a dome of large far panels that turns with the camera
+    // (Desert's: texture 07200200, 128 triangles 2,200 to 4,100 units away; Mountain's: 07200400, 96 triangles 3,000 to
+    // 3,900), all the way round, its clouds and hills painted over the front only: past about 63 degrees it shows the
+    // picture's smeared edge and a paler sky. On three screens each side screen draws the dome turned toward it in place
+    // of the game's own (record_world), so the painting reaches its outer edge (issues sega-rally-2-0004, 0009). The dome
+    // is the texture with the most triangles wholly past 1,200 units and none nearer: Mountain's far hills (027e0300)
+    // also have triangles past it but come in to 200 units (0.5.13 took the first far texture, the hills, and turned nothing)
     sky_turned_.clear();
+    sky_keep_.clear();
+    sky_first_ = ~0u;
     if (scene_) for (const R3DViewport& v : scene_->viewports) {
         if (!v.world) continue;
         float views[3][16], per[3][7];
         if (wheelkit_views(v.proj, float(f.out_w) / 3.0f / float(f.out_h) * SCREEN_H / SCREEN_W, views, per) != 3) break;
-        constexpr float CLEAN = 1.22f, NEAREST = 1200.0f;   // the clouds reach 70 degrees; the dome is past 1,200 units
+        constexpr float CLEAN = 1.05f, NEAREST = 1200.0f;   // the painting is clean to 60 degrees (Mountain's edge is at 63); the dome is past 1,200 units
+        constexpr int LEAST = 32;                           // triangles a dome has at least
         const std::vector<R3DVertex>& vs = scene_->vertices;
         const uint32_t end = std::min<uint32_t>(v.opaque_first + v.opaque_count, uint32_t(vcount));
         auto len = [](const float* p) { return std::sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]); };
-        uint32_t tex = ~0u;   // the dome's texture: that of the triangles wholly beyond NEAREST
-        for (uint32_t t = v.opaque_first; t + 2 < end && tex == ~0u; t += 3)
-            if (len(vs[t].pos) > NEAREST && len(vs[t + 1].pos) > NEAREST && len(vs[t + 2].pos) > NEAREST) tex = vs[t].tex;
-        float nearest = 1e9f;
-        for (uint32_t i = v.opaque_first; i < end; i++)
-            if (vs[i].tex == tex) nearest = std::min(nearest, len(vs[i].pos));
-        if (tex == ~0u || nearest < NEAREST) break;
+        struct Far { uint32_t tex; int count; bool nearer; };
+        std::vector<Far> fars;
+        for (uint32_t t = v.opaque_first; t + 2 < end; t += 3)
+            if (len(vs[t].pos) > NEAREST && len(vs[t + 1].pos) > NEAREST && len(vs[t + 2].pos) > NEAREST) {
+                auto it = std::find_if(fars.begin(), fars.end(), [&](const Far& e) { return e.tex == vs[t].tex; });
+                if (it == fars.end()) fars.push_back({vs[t].tex, 1, false});
+                else it->count++;
+            }
+        if (fars.empty()) break;
+        for (uint32_t t = v.opaque_first; t + 2 < end; t += 3)
+            if (len(vs[t].pos) <= NEAREST || len(vs[t + 1].pos) <= NEAREST || len(vs[t + 2].pos) <= NEAREST)
+                for (Far& e : fars)
+                    if (e.tex == vs[t].tex) e.nearer = true;
+        const Far* dome = nullptr;
+        for (const Far& e : fars)
+            if (!e.nearer && e.count >= LEAST && (!dome || e.count > dome->count)) dome = &e;
+        if (dome != nullptr && dome->tex != sky_logged_) {
+            char line[200];
+            snprintf(line, sizeof line, "sega-rally-2: three views: the sky dome is texture %08x (%d triangles), turned toward each side screen",
+                     dome->tex, dome->count);
+            wheelkit_note(line);
+            sky_logged_ = dome->tex;
+        }
+        if (dome == nullptr) break;
+        const uint32_t tex = dome->tex;
+        // The rest of the world's opaque triangles, in runs, drawn on the side screens without the game's dome
+        for (uint32_t a = v.opaque_first; a < end;) {
+            while (a < end && vs[a].tex == tex) a += 3;
+            uint32_t b = a;
+            while (b < end && vs[b].tex != tex) b += 3;
+            b = std::min(b, end);
+            if (b > a) sky_keep_.push_back({a, b - a});
+            a = b;
+        }
+        if (end < v.opaque_first + v.opaque_count) sky_keep_.push_back({end, v.opaque_first + v.opaque_count - end});
+        sky_first_ = v.opaque_first;
         for (int s : {0, 2}) {
-            const float* q = per[s];   // the screen's outer edge: how far it reaches past the clouds
+            const float* q = per[s];   // the screen's outer edge: how far it reaches past the painting
             const float sl = (s ? 1.0f + q[2] : -1.0f + q[2]) / q[0];
             const float turn = std::max(std::fabs(std::atan2(q[4] * sl - q[5], q[4] - q[6] * sl)) - CLEAN, 0.0f) * (s ? 1.0f : -1.0f);
-            const float c = std::cos(turn), sn = std::sin(turn), r = 0.95f * nearest;
+            const float c = std::cos(turn), sn = std::sin(turn);
             auto spin = [&](float* p) { const float x = p[0], z = p[2]; p[0] = x * c - z * sn, p[2] = z * c + x * sn; };
-            auto onto = [&](float* p) { const float l = len(p); if (l > 0) p[0] *= r / l, p[1] *= r / l, p[2] *= r / l; };
             for (uint32_t i = v.opaque_first; i + 2 < end; i += 3)
                 if (vs[i].tex == tex)
                     for (int k = 0; k < 3; k++) {
                         R3DVertex x = vs[i + k];
-                        spin(x.pos), spin(x.nrm), spin(x.prev), onto(x.pos), onto(x.prev);
+                        spin(x.pos), spin(x.nrm), spin(x.prev);
                         sky_turned_.push_back(x);
                     }
         }
@@ -1711,9 +1749,13 @@ void R3DRenderer::record_world(const Frame& f) {
                     vkCmdPushConstants(cmd, r3d_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                        sizeof(pc), &pc);
                     if (pass == 0) {
-                        vkCmdDraw(cmd, count, 1, v.opaque_first, 0);
-                        if (v.world && nviews == 3 && s != 1 && !sky_turned_.empty())   // Wheelkit: the dome turned to this screen
+                        // Wheelkit: on a side screen the game's sky dome is left out and drawn turned toward it (record_uploads)
+                        if (v.world && nviews == 3 && s != 1 && !sky_turned_.empty() && v.opaque_first == sky_first_) {
+                            for (const auto& [first, n] : sky_keep_) vkCmdDraw(cmd, n, 1, first, 0);
                             vkCmdDraw(cmd, uint32_t(sky_turned_.size() / 2), 1, uint32_t(scene_->vertices.size() + (s ? sky_turned_.size() / 2 : 0)), 0);
+                        } else {
+                            vkCmdDraw(cmd, count, 1, v.opaque_first, 0);
+                        }
                         continue;
                     }
                     draw_runs(translucent_, blob_);
